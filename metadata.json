@@ -1,0 +1,6 @@
+{
+  "name": "LOTADOR - Corre. Chama. Lota. Ganha.",
+  "description": "Jogo arcade 3D de competição inspirado nos lotadores de táxi em Luanda, Angola. Corre, chama passageiros, lota os táxis e ganha Kz virtuais!",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
