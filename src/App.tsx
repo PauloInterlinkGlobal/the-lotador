@@ -207,6 +207,7 @@ export default function App() {
             isRushHour={isRushHour}
             taxis={taxis}
             passengers={passengers}
+            taxisLoadedCount={engineRef.current?.taxisLoadedCount || 0}
             onCallAction={() => engineRef.current?.triggerCallAction()}
             onInteractAction={() => engineRef.current?.triggerInteractAction()}
             onJoystickMove={(dir) =>
@@ -250,7 +251,11 @@ export default function App() {
       )}
 
       {activeModal === 'MAPS' && (
-        <MapSelectModal stats={stats} onClose={() => setActiveModal(null)} />
+        <MapSelectModal
+          stats={stats}
+          onUpdateStats={(newStats) => setStats(newStats)}
+          onClose={() => setActiveModal(null)}
+        />
       )}
 
       {activeModal === 'MISSIONS' && (

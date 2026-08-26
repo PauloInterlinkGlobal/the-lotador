@@ -48,38 +48,50 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
         )}
 
         {/* Stats Grid */}
-        <div className="w-full bg-[#f1f3ff] rounded-2xl p-4 border-2 border-[#161c28] mb-6 flex flex-col gap-3">
-          <div className="flex justify-between items-center font-space">
+        <div className="w-full bg-[#f1f3ff] rounded-2xl p-4 border-2 border-[#161c28] mb-4 flex flex-col gap-2.5">
+          <div className="flex justify-between items-center font-space text-sm">
             <span className="text-slate-600 font-medium">Táxis Lotados:</span>
-            <span className="font-bold text-lg text-[#161c28]">{results.taxisLoaded} 🚐</span>
+            <span className="font-bold text-base text-[#161c28]">{results.taxisLoaded} 🚐</span>
           </div>
 
-          <div className="flex justify-between items-center font-space">
+          <div className="flex justify-between items-center font-space text-sm">
             <span className="text-slate-600 font-medium">Passageiros:</span>
-            <span className="font-bold text-lg text-[#161c28]">{results.passengersServed} 👤</span>
+            <span className="font-bold text-base text-[#161c28]">{results.passengersServed} 👤</span>
           </div>
 
-          <div className="flex justify-between items-center font-space">
+          <div className="flex justify-between items-center font-space text-sm">
             <span className="text-slate-600 font-medium">Combo Máximo:</span>
-            <span className="font-bold text-lg text-[#fe6b00]">x{results.maxCombo} 🔥</span>
+            <span className="font-bold text-base text-[#fe6b00]">x{results.maxCombo} 🔥</span>
           </div>
 
           <hr className="border-slate-300" />
 
-          <div className="flex justify-between items-center font-space">
+          <div className="flex justify-between items-center font-space text-sm">
             <span className="text-slate-700 font-bold">Dinheiro Ganho:</span>
-            <span className="font-space font-bold text-xl text-[#006399]">
+            <span className="font-space font-bold text-lg text-[#006399]">
               +{results.earnedMoney.toLocaleString()} Kz
             </span>
           </div>
 
-          <div className="flex justify-between items-center font-space">
+          <div className="flex justify-between items-center font-space text-sm">
             <span className="text-slate-700 font-bold">XP Adquirido:</span>
-            <span className="font-space font-bold text-base text-[#705e00]">
+            <span className="font-space font-bold text-sm text-[#705e00]">
               +{results.earnedXp} XP
             </span>
           </div>
         </div>
+
+        {/* Mission Rewards Banner */}
+        {results.taxisLoaded >= 3 && (
+          <div className="w-full bg-[#2e7d32] text-white p-2.5 rounded-2xl border-2 border-[#161c28] mb-4 flex items-center justify-between text-xs font-space font-bold hard-shadow-sm">
+            <span className="flex items-center gap-1">
+              🎯 MISSÃO CONCLUÍDA!
+            </span>
+            <span className="bg-[#ffd700] text-[#705e00] px-2 py-0.5 rounded-lg border border-[#161c28]">
+              +500 Kz RECOMPENSA
+            </span>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex flex-col gap-3 w-full">

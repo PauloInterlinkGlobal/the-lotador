@@ -15,6 +15,7 @@ import {
 } from '../types/game';
 import { soundManager } from '../utils/audio';
 import { spriteAtlasManager } from '../utils/spriteAtlas';
+import { CAMPAIGN_ZONES } from '../utils/storage';
 
 export interface GameEngineCallbacks {
   onScoreUpdate: (kz: number, xp: number, combo: number) => void;
@@ -84,10 +85,38 @@ export class GameEngine {
   private passengerSpawnTimer = 0;
   private taxiSpawnTimer = 0;
 
+  // Animation state tracking
+  private playerVel = { x: 0, z: 0 };
+  private playerAnimDistance = 0;
+  private playerAnimFrameTimer = 0;
+  private playerAnimFrameIndex = 0;
+  private playerFacingLeft = false;
+  private prevPlayerFacingLeft = false;
+  private prevPlayerAnimStep = 0;
+  private playerTurnTilt = 0;
+  private playerSkidTimer = 0;
+  private wasInputMoving = false;
+  private idleBreathTimer = 0;
+  private campaignZoneMultiplier = 1.0;
+
+  // Particle System
+  private particles: {
+    sprite: THREE.Sprite | THREE.Mesh;
+    velocity: THREE.Vector3;
+    life: number;
+    maxLife: number;
+    scaleStart: number;
+    scaleEnd: number;
+  }[] = [];
+
   constructor(container: HTMLElement, playerStats: PlayerStats, callbacks: GameEngineCallbacks) {
     this.container = container;
     this.playerStats = playerStats;
     this.callbacks = callbacks;
+
+    // Apply Campaign Zone Multiplier
+    const selectedZone = CAMPAIGN_ZONES.find((z) => z.id === playerStats.selectedMapId);
+    this.campaignZoneMultiplier = selectedZone ? selectedZone.bonusKzMultiplier : 1.0;
 
     // Apply Upgrades to Player
     this.playerSpeed = 7.5 + playerStats.upgradeSpeed * 0.6;
@@ -104,6 +133,92 @@ export class GameEngine {
     this.animate(0);
   }
 
+  // Spawns dust cloud particle at ground level
+  public spawnDustParticle(x: number, y: number, z: number, scale = 0.4) {
+    const geo = new THREE.CircleGeometry(scale, 12);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xe8dfc8,
+      transparent: true,
+      opacity: 0.55,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.set(x + (Math.random() - 0.5) * 0.2, y + 0.02, z + (Math.random() - 0.5) * 0.2);
+    this.scene.add(mesh);
+
+    this.particles.push({
+      sprite: mesh as any,
+      velocity: new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.25, (Math.random() - 0.5) * 0.5),
+      life: 0.35,
+      maxLife: 0.35,
+      scaleStart: scale,
+      scaleEnd: scale * 1.7,
+    });
+  }
+
+  // Spawns visual feedback sprite particle from atlas
+  public spawnSpriteParticle(
+    frameName: string, 
+    pos: THREE.Vector3 | { x: number; y: number; z: number }, 
+    scale = 1.6, 
+    velocityY = 2.2
+  ) {
+    const tex = spriteAtlasManager.getTexture(frameName);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.05 });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(pos.x, (pos.y || 0.6) + 1.2, pos.z);
+    sprite.scale.set(scale, scale, 1);
+    sprite.renderOrder = 3000;
+    this.scene.add(sprite);
+
+    this.particles.push({
+      sprite,
+      velocity: new THREE.Vector3((Math.random() - 0.5) * 1.2, velocityY, (Math.random() - 0.5) * 1.2),
+      life: 1.0,
+      maxLife: 1.0,
+      scaleStart: scale,
+      scaleEnd: scale * 1.3,
+    });
+  }
+
+  private updateParticles(delta: number) {
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.life -= delta;
+      if (p.life <= 0) {
+        this.scene.remove(p.sprite);
+        this.particles.splice(i, 1);
+        continue;
+      }
+
+      const t = 1 - p.life / p.maxLife;
+      p.sprite.position.x += p.velocity.x * delta;
+      p.sprite.position.y += p.velocity.y * delta;
+      p.sprite.position.z += p.velocity.z * delta;
+
+      const currentScale = p.scaleStart + (p.scaleEnd - p.scaleStart) * t;
+      p.sprite.scale.set(currentScale, currentScale, 1);
+      (p.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, p.life / p.maxLife);
+    }
+  }
+
+  // Dynamic Depth Sorting
+  private updateDepthSorting() {
+    if (this.playerMesh) {
+      this.playerMesh.renderOrder = 1000 - Math.round(this.playerPos.z * 10);
+    }
+    this.passengerMeshes.forEach((mesh) => {
+      mesh.renderOrder = 1000 - Math.round(mesh.position.z * 10);
+    });
+    this.npcMeshes.forEach((mesh) => {
+      mesh.renderOrder = 1000 - Math.round(mesh.position.z * 10);
+    });
+    this.taxiMeshes.forEach((mesh) => {
+      mesh.renderOrder = 1000 - Math.round(mesh.position.z * 10);
+    });
+  }
+
   private initThree() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xdde2f3); // Soft sky light blue
@@ -111,8 +226,8 @@ export class GameEngine {
 
     const aspect = this.container.clientWidth / this.container.clientHeight;
     this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 1000);
-    this.camera.position.set(0, 18, 18);
-    this.camera.lookAt(0, 0, 0);
+    this.camera.position.set(0, 16, -16);
+    this.camera.lookAt(0, 0.8, 2);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
@@ -129,7 +244,7 @@ export class GameEngine {
     this.scene.add(ambientLight);
 
     const dirLight = new THREE.DirectionalLight(0xfffaed, 1.2);
-    dirLight.position.set(20, 30, 20);
+    dirLight.position.set(15, 25, -15);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 1024;
     dirLight.shadow.mapSize.height = 1024;
@@ -507,6 +622,8 @@ export class GameEngine {
       assignedTaxiId: null,
       color: '#' + Math.floor(Math.random() * 16777215).toString(16),
       gender: Math.random() > 0.5 ? 'M' : 'F',
+      animFrame: 0,
+      animTimer: 0,
     };
 
     this.passengers.push(passenger);
@@ -525,6 +642,9 @@ export class GameEngine {
     pMesh.position.set(startX, 0.6, startZ);
     this.scene.add(pMesh);
     this.passengerMeshes.set(id, pMesh);
+
+    // Visual feedback particle on spawn ✨
+    this.spawnSpriteParticle('effect_passenger_ok', passenger.position, 1.4, 2.0);
   }
 
   // Player Trigger: Call Passengers 📢
@@ -532,6 +652,9 @@ export class GameEngine {
     this.isCalling = true;
     this.callPulseTimer = 0.3;
     soundManager.playCall();
+
+    // Particle effect around player
+    this.spawnSpriteParticle('effect_megaphone', this.playerPos, 2.2, 1.6);
 
     const radius = 5.0 + this.playerStats.upgradeVoice * 0.8;
 
@@ -548,6 +671,8 @@ export class GameEngine {
           p.followedBy = 'PLAYER';
           this.callbacks.onFloatingText('Acompanhando!', '#ffd700', p.position);
           soundManager.playCoin();
+          // Visual feedback on recruit
+          this.spawnSpriteParticle('effect_passenger_ok', p.position, 1.4, 2.2);
         }
       }
     });
@@ -585,6 +710,10 @@ export class GameEngine {
       this.callbacks.onFloatingText(`+${reward} Kz`, '#ffd700', matchingTaxi.position);
       soundManager.playCoin();
 
+      // Visual feedback particles on board 💰 ✨
+      this.spawnSpriteParticle('effect_coin', matchingTaxi.position, 1.8, 2.4);
+      this.spawnSpriteParticle('effect_xp', matchingTaxi.position, 1.8, 2.8);
+
       // Check if taxi is now full!
       if (matchingTaxi.currentPassengers >= matchingTaxi.capacity) {
         this.onTaxiFilled(matchingTaxi);
@@ -611,6 +740,10 @@ export class GameEngine {
     soundManager.playTaxiFull();
     soundManager.vibrate(100);
 
+    // Particles on taxi filled
+    this.spawnSpriteParticle('effect_taxi_full', taxi.position, 2.6, 3.0);
+    this.spawnSpriteParticle('effect_combo', taxi.position, 2.2, 2.5);
+
     // Free slot after departure animation
     setTimeout(() => {
       taxi.state = 'DEPARTING';
@@ -629,6 +762,8 @@ export class GameEngine {
     this.updateNPCs(delta);
     this.updatePassengers(delta);
     this.updateTaxis(delta);
+    this.updateParticles(delta);
+    this.updateDepthSorting();
     this.updateCamera();
     this.updateTimers(delta);
 
@@ -646,29 +781,134 @@ export class GameEngine {
     }
     this.callbacks.onStaminaChange(this.stamina, this.maxStamina);
 
-    // Speed calculation
-    const currentSpeed = this.isRunning ? this.playerSpeed * 1.5 : this.playerSpeed;
+    // Calculate desired input velocity
+    const targetSpeed = this.isRunning ? this.playerSpeed * 1.5 : this.playerSpeed;
+    const isInputMoving = this.inputDir.x !== 0 || this.inputDir.z !== 0;
 
-    if (this.inputDir.x !== 0 || this.inputDir.z !== 0) {
-      this.playerPos.x += this.inputDir.x * currentSpeed * delta;
-      this.playerPos.z += this.inputDir.z * currentSpeed * delta;
+    const targetVelX = isInputMoving ? this.inputDir.x * targetSpeed : 0;
+    const targetVelZ = isInputMoving ? this.inputDir.z * targetSpeed : 0;
 
-      // Clamp player within map boundaries
-      this.playerPos.x = Math.max(-26, Math.min(26, this.playerPos.x));
-      this.playerPos.z = Math.max(-2, Math.min(11, this.playerPos.z));
+    // Smooth physics: acceleration vs braking lerp
+    const lerpSpeed = isInputMoving ? 12 : 16;
+    this.playerVel.x = THREE.MathUtils.lerp(this.playerVel.x, targetVelX, lerpSpeed * delta);
+    this.playerVel.z = THREE.MathUtils.lerp(this.playerVel.z, targetVelZ, lerpSpeed * delta);
 
-      // Rotation
-      this.playerRotation = Math.atan2(this.inputDir.x, this.inputDir.z);
-      this.playerMesh.rotation.y = this.playerRotation;
+    const speedScalar = Math.hypot(this.playerVel.x, this.playerVel.z);
 
-      // Leg walk animation
-      const legL = this.playerMesh.getObjectByName('legL');
-      const legR = this.playerMesh.getObjectByName('legR');
-      if (legL && legR) {
-        const swing = Math.sin(Date.now() * 0.012) * 0.5;
-        legL.rotation.x = swing;
-        legR.rotation.x = -swing;
+    // Detect sudden stopping skid
+    if (this.wasInputMoving && !isInputMoving && speedScalar > 2.5) {
+      this.playerSkidTimer = 0.2;
+      soundManager.playSkid();
+      this.spawnDustParticle(this.playerPos.x, 0.02, this.playerPos.z, 0.5);
+      this.spawnDustParticle(this.playerPos.x, 0.02, this.playerPos.z, 0.4);
+    }
+    this.wasInputMoving = isInputMoving;
+
+    const oldX = this.playerPos.x;
+    const oldZ = this.playerPos.z;
+
+    this.playerPos.x += this.playerVel.x * delta;
+    this.playerPos.z += this.playerVel.z * delta;
+
+    // Clamp player within map boundaries
+    this.playerPos.x = Math.max(-26, Math.min(26, this.playerPos.x));
+    this.playerPos.z = Math.max(-2, Math.min(11, this.playerPos.z));
+
+    const actualDx = this.playerPos.x - oldX;
+    const actualDz = this.playerPos.z - oldZ;
+    const actualDist = Math.hypot(actualDx, actualDz);
+    const isMoving = actualDist > 0.002;
+
+    // Direction & Facing flip with Turn Lean
+    if (actualDx < -0.01) {
+      if (!this.playerFacingLeft && speedScalar > 2.0) {
+        this.playerTurnTilt = 0.22; // Turn lean angle
+        soundManager.playSkid();
+        this.spawnDustParticle(this.playerPos.x, 0.02, this.playerPos.z, 0.4);
       }
+      this.playerFacingLeft = true;
+    } else if (actualDx > 0.01) {
+      if (this.playerFacingLeft && speedScalar > 2.0) {
+        this.playerTurnTilt = -0.22; // Turn lean angle
+        soundManager.playSkid();
+        this.spawnDustParticle(this.playerPos.x, 0.02, this.playerPos.z, 0.4);
+      }
+      this.playerFacingLeft = false;
+    }
+
+    // Decay turn tilt smoothly back to 0
+    this.playerTurnTilt = THREE.MathUtils.lerp(this.playerTurnTilt, 0, 10 * delta);
+
+    // Animation State Machine for Player
+    const genderPrefix = this.playerStats.selectedGender === 'F' ? 'player_female' : 'player_male';
+    let frameKey = `${genderPrefix}_idle_0`;
+    let yBob = 0;
+    let shadowScale = 1.0;
+    let shadowOpacity = 0.3;
+
+    if (isMoving || this.isCalling) {
+      const isRunning = this.isRunning && isMoving;
+      const animState = isRunning ? 'run' : 'walk';
+      const strideLength = isRunning ? 0.38 : 0.52; // Units per frame step
+
+      this.playerAnimDistance += actualDist;
+      const frameCount = 8;
+      const currentStep = Math.floor(this.playerAnimDistance / strideLength);
+      const frameIndex = currentStep % frameCount;
+
+      // Synchronize Footsteps & Foot Dust Particles on foot strike frames (0 and 4)
+      if (currentStep !== this.prevPlayerAnimStep) {
+        this.prevPlayerAnimStep = currentStep;
+        if (frameIndex === 0 || frameIndex === 4) {
+          soundManager.playStep(isRunning);
+          this.spawnDustParticle(
+            this.playerPos.x,
+            0.02,
+            this.playerPos.z,
+            isRunning ? 0.45 : 0.28
+          );
+        }
+      }
+
+      frameKey = `${genderPrefix}_${animState}_${frameIndex}`;
+
+      // Vertical bob & dynamic shadow scale
+      const stepPhase = (this.playerAnimDistance / strideLength) * Math.PI;
+      yBob = Math.abs(Math.sin(stepPhase)) * (isRunning ? 0.12 : 0.07);
+      shadowScale = 1.0 - yBob * 0.8;
+      shadowOpacity = 0.35 - yBob * 0.15;
+    } else if (this.playerSkidTimer > 0) {
+      // Stopping / Skid frame
+      this.playerSkidTimer -= delta;
+      frameKey = `${genderPrefix}_walk_1`;
+      yBob = -0.04;
+      this.playerTurnTilt = this.playerFacingLeft ? -0.15 : 0.15;
+      if (Math.random() < 0.3) {
+        this.spawnDustParticle(this.playerPos.x, 0.02, this.playerPos.z, 0.35);
+      }
+    } else {
+      // Clean, stable idle frame when stopped
+      frameKey = `${genderPrefix}_idle_0`;
+      this.idleBreathTimer += delta;
+      yBob = Math.sin(this.idleBreathTimer * 3) * 0.012; // Gentle breathing idle
+    }
+
+    const spriteObj = this.playerMesh.children.find((c) => c instanceof THREE.Sprite) as THREE.Sprite;
+    const shadowMesh = this.playerMesh.children.find(
+      (c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.CircleGeometry
+    ) as THREE.Mesh;
+
+    if (spriteObj) {
+      spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
+      spriteObj.material.needsUpdate = true;
+      spriteObj.scale.set(this.playerFacingLeft ? -1.4 : 1.4, 2.2, 1);
+      spriteObj.position.y = 1.1 + yBob;
+      spriteObj.rotation.z = this.playerTurnTilt;
+    }
+
+    if (shadowMesh) {
+      shadowMesh.scale.set(shadowScale, shadowScale, 1);
+      (shadowMesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0.1, shadowOpacity);
     }
 
     this.playerMesh.position.copy(this.playerPos);
@@ -680,6 +920,9 @@ export class GameEngine {
       this.callPulseTimer -= delta;
       const opacity = Math.max(0, this.callPulseTimer / 0.3);
       (this.callRadiusMesh.material as THREE.MeshBasicMaterial).opacity = opacity * 0.5;
+      if (this.callPulseTimer <= 0) {
+        this.isCalling = false;
+      }
     }
   }
 
@@ -687,6 +930,9 @@ export class GameEngine {
     this.npcs.forEach((npc) => {
       const mesh = this.npcMeshes.get(npc.id);
       if (!mesh) return;
+
+      let targetVelX = 0;
+      let targetVelZ = 0;
 
       // AI Logic: Find nearest unserviced passenger
       if (!npc.targetPassengerId) {
@@ -700,15 +946,13 @@ export class GameEngine {
       if (npc.targetPassengerId) {
         const targetP = this.passengers.find((p) => p.id === npc.targetPassengerId);
         if (targetP && targetP.state === 'WAITING') {
-          // Move towards passenger
           const dx = targetP.position.x - npc.position.x;
           const dz = targetP.position.z - npc.position.z;
           const dist = Math.hypot(dx, dz);
 
           if (dist > 1.0) {
-            npc.position.x += (dx / dist) * npc.speed * delta;
-            npc.position.z += (dz / dist) * npc.speed * delta;
-            mesh.rotation.y = Math.atan2(dx, dz);
+            targetVelX = (dx / dist) * npc.speed;
+            targetVelZ = (dz / dist) * npc.speed;
           } else {
             // Claim passenger
             targetP.state = 'FOLLOWING';
@@ -736,9 +980,8 @@ export class GameEngine {
             const dist = Math.hypot(dx, dz);
 
             if (dist > 2.0) {
-              npc.position.x += (dx / dist) * npc.speed * delta;
-              npc.position.z += (dz / dist) * npc.speed * delta;
-              mesh.rotation.y = Math.atan2(dx, dz);
+              targetVelX = (dx / dist) * npc.speed;
+              targetVelZ = (dz / dist) * npc.speed;
             } else {
               // Board passenger
               p.state = 'BOARDING';
@@ -755,6 +998,66 @@ export class GameEngine {
         }
       }
 
+      // Smooth inertia velocity
+      npc.velocity = npc.velocity || { x: 0, z: 0 };
+      npc.velocity.x = THREE.MathUtils.lerp(npc.velocity.x, targetVelX, 14 * delta);
+      npc.velocity.z = THREE.MathUtils.lerp(npc.velocity.z, targetVelZ, 14 * delta);
+
+      const oldX = npc.position.x;
+      const oldZ = npc.position.z;
+
+      npc.position.x += npc.velocity.x * delta;
+      npc.position.z += npc.velocity.z * delta;
+
+      const actualDx = npc.position.x - oldX;
+      const actualDz = npc.position.z - oldZ;
+      const actualDist = Math.hypot(actualDx, actualDz);
+      const isMoving = actualDist > 0.002;
+
+      if (actualDx < -0.01) {
+        npc.facingLeft = true;
+      } else if (actualDx > 0.01) {
+        npc.facingLeft = false;
+      }
+
+      const npcTypeKey = `npc_${npc.id}`;
+      let frameKey = npcTypeKey;
+      let yBob = 0;
+      let shadowScale = 1.0;
+      let shadowOpacity = 0.3;
+
+      if (isMoving) {
+        npc.animDistance = (npc.animDistance || 0) + actualDist;
+        const strideLength = 0.42;
+        const frameIndex = Math.floor(npc.animDistance / strideLength) % 4;
+
+        frameKey = `${npcTypeKey}_walk_${frameIndex}`;
+
+        const stepPhase = (npc.animDistance / strideLength) * Math.PI;
+        yBob = Math.abs(Math.sin(stepPhase)) * 0.07;
+        shadowScale = 1.0 - yBob * 0.7;
+        shadowOpacity = 0.3 - yBob * 0.12;
+      } else {
+        frameKey = npcTypeKey;
+      }
+
+      const spriteObj = mesh.children.find((c) => c instanceof THREE.Sprite) as THREE.Sprite;
+      const shadowMesh = mesh.children.find(
+        (c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.CircleGeometry
+      ) as THREE.Mesh;
+
+      if (spriteObj) {
+        spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
+        spriteObj.material.needsUpdate = true;
+        spriteObj.scale.set(npc.facingLeft ? -1.4 : 1.4, 2.2, 1);
+        spriteObj.position.y = 1.1 + yBob;
+      }
+
+      if (shadowMesh) {
+        shadowMesh.scale.set(shadowScale, shadowScale, 1);
+        (shadowMesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0.1, shadowOpacity);
+      }
+
       mesh.position.set(npc.position.x, 0.6, npc.position.z);
     });
   }
@@ -765,11 +1068,29 @@ export class GameEngine {
       const pMesh = this.passengerMeshes.get(p.id);
       if (!pMesh) continue;
 
+      const spriteObj = pMesh.children.find((c) => c instanceof THREE.Sprite) as THREE.Sprite;
+      const shadowMesh = pMesh.children.find(
+        (c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.CircleGeometry
+      ) as THREE.Mesh;
+
+      const pTypeKey = 
+        p.type === 'APRESSADO' ? 'passenger_apressado' :
+        p.type === 'INDECISO' ? 'passenger_indeciso' :
+        p.type === 'OBSERVADOR' ? 'passenger_observador' :
+        p.type === 'EXIGENTE' ? 'passenger_exigente' :
+        p.type === 'CORRERIA' ? 'passenger_correria' :
+        p.type === 'ESPECIAL' ? 'passenger_especial' :
+        'passenger_normal';
+
+      let targetVelX = 0;
+      let targetVelZ = 0;
+
       // Patience timer
       if (p.state === 'WAITING' || p.state === 'SEARCHING') {
         p.patience -= delta;
         if (p.patience <= 0) {
-          // Passenger leaves in frustration
+          // Passenger leaves in frustration ⌛
+          this.spawnSpriteParticle('effect_passenger_lost', p.position, 1.6, 2.0);
           this.removePassenger(p, i);
           continue;
         }
@@ -788,9 +1109,8 @@ export class GameEngine {
         const dist = Math.hypot(dx, dz);
 
         if (dist > 1.2) {
-          p.position.x += (dx / dist) * (p.speed * 1.2) * delta;
-          p.position.z += (dz / dist) * (p.speed * 1.2) * delta;
-          pMesh.rotation.y = Math.atan2(dx, dz);
+          targetVelX = (dx / dist) * (p.speed * 1.15);
+          targetVelZ = (dz / dist) * (p.speed * 1.15);
         }
       }
 
@@ -799,6 +1119,63 @@ export class GameEngine {
         // Disappear into taxi
         this.removePassenger(p, i);
         continue;
+      }
+
+      // Smooth inertia velocity
+      p.velocity = p.velocity || { x: 0, z: 0 };
+      p.velocity.x = THREE.MathUtils.lerp(p.velocity.x, targetVelX, 15 * delta);
+      p.velocity.z = THREE.MathUtils.lerp(p.velocity.z, targetVelZ, 15 * delta);
+
+      const oldX = p.position.x;
+      const oldZ = p.position.z;
+
+      p.position.x += p.velocity.x * delta;
+      p.position.z += p.velocity.z * delta;
+
+      const actualDx = p.position.x - oldX;
+      const actualDz = p.position.z - oldZ;
+      const actualDist = Math.hypot(actualDx, actualDz);
+      const isMoving = actualDist > 0.002;
+
+      if (actualDx < -0.01) {
+        p.facingLeft = true;
+      } else if (actualDx > 0.01) {
+        p.facingLeft = false;
+      }
+
+      let frameKey = pTypeKey;
+      let yBob = 0;
+      let shadowScale = 1.0;
+      let shadowOpacity = 0.3;
+
+      if (isMoving) {
+        p.animDistance = (p.animDistance || 0) + actualDist;
+        const strideLength = 0.42;
+        const frameIndex = Math.floor(p.animDistance / strideLength) % 4;
+
+        frameKey = `${pTypeKey}_walk_${frameIndex}`;
+
+        const stepPhase = (p.animDistance / strideLength) * Math.PI;
+        yBob = Math.abs(Math.sin(stepPhase)) * 0.07;
+        shadowScale = 1.0 - yBob * 0.7;
+        shadowOpacity = 0.3 - yBob * 0.12;
+      } else {
+        // Idle / Rest pose when stationary
+        frameKey = pTypeKey;
+        p.animTimer = (p.animTimer || 0) + delta;
+        yBob = Math.sin((p.animTimer || 0) * 2.5) * 0.01;
+      }
+
+      if (spriteObj) {
+        spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
+        spriteObj.material.needsUpdate = true;
+        spriteObj.scale.set(p.facingLeft ? -1.4 : 1.4, 2.2, 1);
+        spriteObj.position.y = 1.1 + yBob;
+      }
+
+      if (shadowMesh) {
+        shadowMesh.scale.set(shadowScale, shadowScale, 1);
+        (shadowMesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0.1, shadowOpacity);
       }
 
       pMesh.position.set(p.position.x, 0.6, p.position.z);
@@ -885,11 +1262,13 @@ export class GameEngine {
   private updateCamera() {
     // Smooth camera target following player
     const targetX = this.playerPos.x * 0.6;
-    const targetZ = this.playerPos.z + 18;
+    const targetY = 16;
+    const targetZ = this.playerPos.z - 16;
 
-    this.camera.position.x += (targetX - this.camera.position.x) * 0.05;
-    this.camera.position.z += (targetZ - this.camera.position.z) * 0.05;
-    this.camera.lookAt(this.playerPos.x * 0.6, 0.8, this.playerPos.z - 2);
+    this.camera.position.x += (targetX - this.camera.position.x) * 0.08;
+    this.camera.position.y += (targetY - this.camera.position.y) * 0.08;
+    this.camera.position.z += (targetZ - this.camera.position.z) * 0.08;
+    this.camera.lookAt(this.playerPos.x * 0.6, 0.8, this.playerPos.z + 2);
   }
 
   public toggleRushHour(enable: boolean) {

@@ -98,17 +98,29 @@ class SpriteAtlasManager {
         ? '#fe6b00'
         : '#006399';
 
+      // Calculate leg swing offset based on frame
+      let legOffset = 0;
+      if (name.includes('_walk_')) {
+        const idx = parseInt(name.split('_walk_')[1] || '0', 10);
+        const swings = [0, 5, 0, -5];
+        legOffset = swings[idx % 4] || 0;
+      } else if (name.includes('_run_')) {
+        const idx = parseInt(name.split('_run_')[1] || '0', 10);
+        const swings = [0, 7, 3, -3, -7, -3, 0, 3];
+        legOffset = swings[idx % 8] || 0;
+      }
+
       // Drop Shadow
       ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
       ctx.beginPath();
       ctx.ellipse(w / 2, h - 5, w * 0.35, 5, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Legs
+      // Legs (with leg swing)
       ctx.fillStyle = '#161c28';
       ctx.beginPath();
-      ctx.roundRect(w * 0.25, h * 0.65, w * 0.2, h * 0.3, 4);
-      ctx.roundRect(w * 0.55, h * 0.65, w * 0.2, h * 0.3, 4);
+      ctx.roundRect(w * 0.25 - legOffset * 0.25, h * 0.65, w * 0.2, h * 0.3, 4);
+      ctx.roundRect(w * 0.55 + legOffset * 0.25, h * 0.65, w * 0.2, h * 0.3, 4);
       ctx.fill();
 
       // Shirt / Torso

@@ -56,6 +56,12 @@ export interface Passenger {
   color: string;
   hatColor?: string;
   gender: 'M' | 'F';
+  animFrame?: number;
+  animTimer?: number;
+  animDistance?: number;
+  velocity?: { x: number; z: number };
+  facingLeft?: boolean;
+  isMoving?: boolean;
 }
 
 export interface Taxi {
@@ -88,6 +94,12 @@ export interface NPCLotador {
   shirtColor: string;
   state: 'IDLE' | 'CHASING' | 'LEADING' | 'BOARDING';
   passengersLoaded: number;
+  animFrame?: number;
+  animTimer?: number;
+  animDistance?: number;
+  velocity?: { x: number; z: number };
+  facingLeft?: boolean;
+  isMoving?: boolean;
 }
 
 export interface PlayerStats {
@@ -111,7 +123,20 @@ export interface PlayerStats {
   selectedPants: number;
   selectedAccessory: number;
 
+  selectedMapId: string;
   unlockedMaps: string[];
+}
+
+export interface CampaignZone {
+  id: string;
+  name: string;
+  city: string;
+  difficulty: 'FÁCIL' | 'MÉDIO' | 'DIFÍCIL' | 'EXTREMO';
+  requiredLevel: number;
+  requiredRuns: number;
+  bonusKzMultiplier: number;
+  desc: string;
+  bgGrad: string;
 }
 
 export interface PowerUp {
@@ -148,6 +173,8 @@ export interface MatchResults {
   earnedXp: number;
   isNewRecord: boolean;
   duration: number;
+  completedMissions?: Mission[];
+  unlockedZoneName?: string;
 }
 
 export interface FloatingText {
@@ -164,4 +191,5 @@ export interface GameSettings {
   musicEnabled: boolean;
   vibrationEnabled: boolean;
   graphicsQuality: 'LOW' | 'MEDIUM' | 'HIGH';
+  language: 'PT' | 'EN';
 }

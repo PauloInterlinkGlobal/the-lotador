@@ -2,10 +2,68 @@
  * Storage and Progression System for LOTADOR
  */
 
-import { PlayerStats, Mission, GameSettings } from '../types/game';
+import { PlayerStats, Mission, GameSettings, CampaignZone } from '../types/game';
 
 const SAVE_KEY = 'LOTADOR_SAVE_V1';
 const SETTINGS_KEY = 'LOTADOR_SETTINGS_V1';
+
+export const CAMPAIGN_ZONES: CampaignZone[] = [
+  {
+    id: 'PARAGEM_URBANA',
+    name: 'Paragem Mutamba',
+    city: 'Luanda Centro',
+    difficulty: 'FÁCIL',
+    requiredLevel: 1,
+    requiredRuns: 0,
+    bonusKzMultiplier: 1.0,
+    desc: 'O coração de Luanda. Onde todo o lotador começa a sua carreira.',
+    bgGrad: 'from-amber-400 to-orange-500',
+  },
+  {
+    id: 'VIANA_EXPRESS',
+    name: 'Terminal de Viana',
+    city: 'Viana',
+    difficulty: 'MÉDIO',
+    requiredLevel: 2,
+    requiredRuns: 1,
+    bonusKzMultiplier: 1.25,
+    desc: 'Passageiros com pressa de chegar a casa. Ritmo acelerado e gorjetas maiores!',
+    bgGrad: 'from-blue-500 to-indigo-600',
+  },
+  {
+    id: 'MERCADO_CORREIOS',
+    name: 'Mercado dos Correios',
+    city: 'Kilamba Kiaxi',
+    difficulty: 'MÉDIO',
+    requiredLevel: 4,
+    requiredRuns: 3,
+    bonusKzMultiplier: 1.5,
+    desc: 'Milhares de comerciantes e passageiros com compras volumosas!',
+    bgGrad: 'from-emerald-500 to-teal-700',
+  },
+  {
+    id: 'TALATONA_LUX',
+    name: 'Rotunda de Talatona',
+    city: 'Talatona',
+    difficulty: 'DIFÍCIL',
+    requiredLevel: 7,
+    requiredRuns: 5,
+    bonusKzMultiplier: 1.8,
+    desc: 'Passageiros exigentes dispostos a pagar o triplo por lotação rápida!',
+    bgGrad: 'from-purple-600 to-pink-600',
+  },
+  {
+    id: 'SAMBA_TERMINAL',
+    name: 'Terminal da Samba',
+    city: 'Samba / Luanda Sul',
+    difficulty: 'EXTREMO',
+    requiredLevel: 10,
+    requiredRuns: 8,
+    bonusKzMultiplier: 2.2,
+    desc: 'O maior terminal da cidade! Disputa feroz com lotadores rivais de elite!',
+    bgGrad: 'from-red-600 to-rose-800',
+  },
+];
 
 export const DEFAULT_PLAYER_STATS: PlayerStats = {
   money: 500, // Starting Kz
@@ -23,6 +81,7 @@ export const DEFAULT_PLAYER_STATS: PlayerStats = {
   selectedShirt: 0,
   selectedPants: 0,
   selectedAccessory: 0,
+  selectedMapId: 'PARAGEM_URBANA',
   unlockedMaps: ['PARAGEM_URBANA'],
 };
 
@@ -31,6 +90,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   musicEnabled: true,
   vibrationEnabled: true,
   graphicsQuality: 'MEDIUM',
+  language: 'PT',
 };
 
 export const DEFAULT_MISSIONS: Mission[] = [

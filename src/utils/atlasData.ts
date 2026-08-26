@@ -75,9 +75,28 @@ export const ATLAS_FRAMES: Record<string, SpriteFrame> = {
 
   // NPCs
   npc_kito: { x: 815, y: 10, width: 70, height: 92 },
+  npc_kito_walk_0: { x: 815, y: 10, width: 70, height: 92 },
+  npc_kito_walk_1: { x: 815, y: 107, width: 70, height: 92 },
+  npc_kito_walk_2: { x: 815, y: 204, width: 70, height: 92 },
+  npc_kito_walk_3: { x: 815, y: 301, width: 70, height: 92 },
+
   npc_manuel: { x: 895, y: 10, width: 70, height: 92 },
+  npc_manuel_walk_0: { x: 895, y: 10, width: 70, height: 92 },
+  npc_manuel_walk_1: { x: 895, y: 107, width: 70, height: 92 },
+  npc_manuel_walk_2: { x: 895, y: 204, width: 70, height: 92 },
+  npc_manuel_walk_3: { x: 895, y: 301, width: 70, height: 92 },
+
   npc_debora: { x: 975, y: 10, width: 70, height: 92 },
+  npc_debora_walk_0: { x: 975, y: 10, width: 70, height: 92 },
+  npc_debora_walk_1: { x: 975, y: 107, width: 70, height: 92 },
+  npc_debora_walk_2: { x: 975, y: 204, width: 70, height: 92 },
+  npc_debora_walk_3: { x: 975, y: 301, width: 70, height: 92 },
+
   npc_mestre_ze: { x: 1115, y: 10, width: 82, height: 105 },
+  npc_mestre_ze_walk_0: { x: 1115, y: 10, width: 82, height: 105 },
+  npc_mestre_ze_walk_1: { x: 1115, y: 120, width: 82, height: 105 },
+  npc_mestre_ze_walk_2: { x: 1115, y: 230, width: 82, height: 105 },
+  npc_mestre_ze_walk_3: { x: 1115, y: 340, width: 82, height: 105 },
 
   // Passenger Portraits / Big
   passenger_normal: { x: 12, y: 220, width: 78, height: 150 },

@@ -37,13 +37,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     saveSettings(updated);
   };
 
+  const handleQualitySelect = (quality: 'LOW' | 'MEDIUM' | 'HIGH') => {
+    soundManager.playClick();
+    const updated = { ...settings, graphicQuality: quality };
+    setSettings(updated);
+    saveSettings(updated);
+  };
+
+  const handleLanguageToggle = (lang: 'PT' | 'EN') => {
+    soundManager.playClick();
+    const updated = { ...settings, language: lang };
+    setSettings(updated);
+    saveSettings(updated);
+  };
+
+  const isPT = settings.language === 'PT';
+
   return (
-    <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 select-none">
-      <div className="bg-white sticker-border hard-shadow-lg p-5 md:p-6 rounded-3xl max-w-sm w-full flex flex-col items-center">
-        <div className="flex justify-between items-center w-full mb-4">
+    <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 select-none">
+      <div className="bg-white sticker-border hard-shadow-lg p-5 md:p-6 rounded-3xl max-w-md w-full flex flex-col items-center max-h-[92vh] overflow-y-auto">
+        <div className="flex justify-between items-center w-full mb-3">
           <h2 className="font-anybody font-black text-2xl text-[#161c28] uppercase flex items-center gap-2">
             <span className="material-symbols-outlined text-[#161c28]">settings</span>
-            DEFINIÇÕES
+            {isPT ? 'DEFINIÇÕES' : 'SETTINGS'}
           </h2>
           <button
             onClick={() => {
@@ -56,11 +72,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           </button>
         </div>
 
-        <div className="flex flex-col gap-3 w-full mb-6">
+        <div className="flex flex-col gap-2.5 w-full mb-4">
           <div className="flex justify-between items-center bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
-            <span className="font-space font-bold text-sm text-[#161c28] flex items-center gap-2">
+            <span className="font-space font-bold text-xs md:text-sm text-[#161c28] flex items-center gap-2">
               <span className="material-symbols-outlined text-lg">volume_up</span>
-              Efeitos Sonoros (SFX)
+              {isPT ? 'Efeitos Sonoros (SFX)' : 'Sound Effects (SFX)'}
             </span>
             <button
               onClick={handleToggleSound}
@@ -68,14 +84,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                 settings.soundEnabled ? 'bg-[#ffd700]' : 'bg-slate-200'
               }`}
             >
-              {settings.soundEnabled ? 'LIGADO' : 'DESLIGADO'}
+              {settings.soundEnabled ? (isPT ? 'LIGADO' : 'ON') : isPT ? 'DESLIGADO' : 'OFF'}
             </button>
           </div>
 
           <div className="flex justify-between items-center bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
-            <span className="font-space font-bold text-sm text-[#161c28] flex items-center gap-2">
+            <span className="font-space font-bold text-xs md:text-sm text-[#161c28] flex items-center gap-2">
               <span className="material-symbols-outlined text-lg">music_note</span>
-              Música de Fundo
+              {isPT ? 'Música de Fundo' : 'Background Music'}
             </span>
             <button
               onClick={handleToggleMusic}
@@ -83,14 +99,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                 settings.musicEnabled ? 'bg-[#ffd700]' : 'bg-slate-200'
               }`}
             >
-              {settings.musicEnabled ? 'LIGADO' : 'DESLIGADO'}
+              {settings.musicEnabled ? (isPT ? 'LIGADO' : 'ON') : isPT ? 'DESLIGADO' : 'OFF'}
             </button>
           </div>
 
           <div className="flex justify-between items-center bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
-            <span className="font-space font-bold text-sm text-[#161c28] flex items-center gap-2">
+            <span className="font-space font-bold text-xs md:text-sm text-[#161c28] flex items-center gap-2">
               <span className="material-symbols-outlined text-lg">vibration</span>
-              Vibração Hática
+              {isPT ? 'Vibração Hática' : 'Haptic Vibration'}
             </span>
             <button
               onClick={handleToggleVibration}
@@ -98,8 +114,63 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                 settings.vibrationEnabled ? 'bg-[#ffd700]' : 'bg-slate-200'
               }`}
             >
-              {settings.vibrationEnabled ? 'LIGADO' : 'DESLIGADO'}
+              {settings.vibrationEnabled ? (isPT ? 'LIGADO' : 'ON') : isPT ? 'DESLIGADO' : 'OFF'}
             </button>
+          </div>
+
+          <div className="flex justify-between items-center bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
+            <span className="font-space font-bold text-xs md:text-sm text-[#161c28] flex items-center gap-2">
+              <span className="material-symbols-outlined text-lg">language</span>
+              {isPT ? 'Idioma / Language' : 'Language'}
+            </span>
+            <div className="flex gap-1">
+              <button
+                onClick={() => handleLanguageToggle('PT')}
+                className={`px-2.5 py-1 rounded-xl border-2 border-[#161c28] font-space font-bold text-xs ${
+                  settings.language === 'PT' ? 'bg-[#ffd700]' : 'bg-white'
+                }`}
+              >
+                🇦🇴 PT
+              </button>
+              <button
+                onClick={() => handleLanguageToggle('EN')}
+                className={`px-2.5 py-1 rounded-xl border-2 border-[#161c28] font-space font-bold text-xs ${
+                  settings.language === 'EN' ? 'bg-[#ffd700]' : 'bg-white'
+                }`}
+              >
+                🇬🇧 EN
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5 bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
+            <span className="font-space font-bold text-xs text-[#161c28] uppercase">
+              {isPT ? 'Qualidade Gráfica:' : 'Graphic Quality:'}
+            </span>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(['LOW', 'MEDIUM', 'HIGH'] as const).map((q) => (
+                <button
+                  key={q}
+                  onClick={() => handleQualitySelect(q)}
+                  className={`py-1.5 rounded-xl border-2 border-[#161c28] font-space font-bold text-xs uppercase ${
+                    settings.graphicQuality === q ? 'bg-[#fe6b00] text-white' : 'bg-white'
+                  }`}
+                >
+                  {q === 'LOW' ? (isPT ? 'BAIXA' : 'LOW') : q === 'MEDIUM' ? (isPT ? 'MÉDIA' : 'MED') : (isPT ? 'ALTA' : 'HIGH')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-[#fffbeb] border-2 border-[#fe6b00] p-3 rounded-2xl flex flex-col gap-1 hard-shadow-sm">
+            <span className="font-anybody font-black text-xs text-[#161c28] uppercase flex items-center gap-1">
+              💡 {isPT ? 'DICAS PARA MOBILE:' : 'MOBILE GAMEPLAY TIPS:'}
+            </span>
+            <ul className="text-[11px] text-slate-700 font-work list-disc pl-4 space-y-0.5">
+              <li>{isPT ? 'Usa o Joystick Virtual à esquerda para controlar o teu Lotador.' : 'Use the Virtual Joystick on the left to move your Lotador.'}</li>
+              <li>{isPT ? 'Usa o botão CHAMA [📢] para atrair passageiros com destino compatível.' : 'Use the CALL button [📢] to attract passengers to matching taxis.'}</li>
+              <li>{isPT ? 'Usa o botão METER [🤝] perto do táxi para embarcar passageiros e somar Combos!' : 'Use INTERACT [🤝] near taxis to load passengers and boost Combos!'}</li>
+            </ul>
           </div>
         </div>
 
@@ -110,7 +181,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           }}
           className="w-full bg-[#161c28] text-white font-space font-bold py-3 rounded-2xl sticker-border hard-shadow uppercase text-sm"
         >
-          CONCLUÍDO
+          {isPT ? 'GUARDAR E VOLTAR' : 'SAVE AND CLOSE'}
         </button>
       </div>
     </div>

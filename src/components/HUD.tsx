@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Passenger, Taxi, RouteType } from '../types/game';
 import { soundManager } from '../utils/audio';
+import { SpriteIcon } from './SpriteIcon';
 
 interface HUDProps {
   money: number;
@@ -16,6 +17,7 @@ interface HUDProps {
   isRushHour: boolean;
   taxis: Taxi[];
   passengers: Passenger[];
+  taxisLoadedCount?: number;
   onCallAction: () => void;
   onInteractAction: () => void;
   onJoystickMove: (dir: { x: number; z: number }) => void;
@@ -33,6 +35,7 @@ export const HUD: React.FC<HUDProps> = ({
   isRushHour,
   taxis,
   passengers,
+  taxisLoadedCount = 0,
   onCallAction,
   onInteractAction,
   onJoystickMove,
@@ -49,6 +52,11 @@ export const HUD: React.FC<HUDProps> = ({
   const secs = timerSeconds % 60;
   const timeFormatted = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 
+  // Count active followers
+  const followersCount = passengers.filter(
+    (p) => p.followedBy === 'PLAYER' && p.state === 'FOLLOWING'
+  ).length;
+
   // Keyboard controls listener for Desktop play!
   useEffect(() => {
     const keysPressed = new Set<string>();
@@ -58,8 +66,8 @@ export const HUD: React.FC<HUDProps> = ({
       let z = 0;
       if (keysPressed.has('KeyA') || keysPressed.has('ArrowLeft')) x -= 1;
       if (keysPressed.has('KeyD') || keysPressed.has('ArrowRight')) x += 1;
-      if (keysPressed.has('KeyW') || keysPressed.has('ArrowUp')) z -= 1;
-      if (keysPressed.has('KeyS') || keysPressed.has('ArrowDown')) z += 1;
+      if (keysPressed.has('KeyW') || keysPressed.has('ArrowUp')) z += 1;
+      if (keysPressed.has('KeyS') || keysPressed.has('ArrowDown')) z -= 1;
 
       // Normalize diagonal speed
       if (x !== 0 && z !== 0) {
@@ -137,44 +145,57 @@ export const HUD: React.FC<HUDProps> = ({
     setJoystickPos({ x: nx, y: ny });
 
     const normX = nx / maxRadius;
-    const normZ = ny / maxRadius;
+    const normZ = -ny / maxRadius;
     onJoystickMove({ x: normX, z: normZ });
   };
 
   const activeTaxi = taxis.find((t) => t.state === 'WAITING' || t.state === 'LOADING');
 
   return (
-    <div className="absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-3 md:p-6 select-none">
+    <div className="absolute inset-0 z-10 pointer-events-none flex flex-col justify-between p-2 md:p-5 select-none overflow-hidden pb-safe">
       {/* HUD Top Bar */}
-      <header className="flex justify-between items-start pointer-events-auto">
+      <header className="flex justify-between items-center pointer-events-auto gap-2">
         {/* Currency Pill */}
-        <div className="flex items-center bg-[#f9f9ff]/90 backdrop-blur-sm rounded-full pr-4 pl-1 py-1 sticker-border hard-shadow">
-          <div className="w-8 h-8 rounded-full bg-[#ffd700] flex items-center justify-center mr-2 border-2 border-[#161c28]">
-            <span className="font-space font-bold text-xs text-[#705e00]">Kz</span>
-          </div>
-          <span className="font-space font-bold text-lg text-[#161c28] tracking-tight">
-            {money.toLocaleString()}
+        <div className="flex items-center bg-white/95 backdrop-blur-sm rounded-full pr-3 pl-1 py-1 sticker-border hard-shadow">
+          <SpriteIcon name="ui_coin" className="w-7 h-7 mr-1" />
+          <span className="font-space font-extrabold text-base md:text-lg text-[#161c28] tracking-tight">
+            {money.toLocaleString()} <span className="text-xs text-[#fe6b00]">Kz</span>
+          </span>
+        </div>
+
+        {/* Mission / Followers & Taxis Tracker */}
+        <div className="flex items-center bg-[#ffd700]/95 backdrop-blur-sm px-3 py-1 rounded-full sticker-border hard-shadow gap-2">
+          <span className="font-space font-bold text-xs text-[#161c28] uppercase flex items-center gap-1">
+            <SpriteIcon name="taxi_candongueiro_drive_0" className="w-5 h-4" />
+            <span>Táxis: <strong className="text-sm text-[#006399]">{taxisLoadedCount}</strong></span>
+          </span>
+          <span className="text-slate-400 font-bold">|</span>
+          <span className="font-space font-bold text-xs text-[#161c28] uppercase flex items-center gap-1">
+            <SpriteIcon name="passenger_normal_walk_0" className="w-4 h-5" />
+            <span>Fila: <strong className="text-sm text-[#2e7d32]">{followersCount}</strong></span>
           </span>
         </div>
 
         {/* Timer & Level */}
-        <div className="flex gap-2 items-center">
-          <div className="bg-[#006399] sticker-border hard-shadow px-3 py-1 -rotate-2">
-            <span className="font-space font-bold text-white text-sm">LVL {level}</span>
+        <div className="flex gap-1.5 items-center">
+          <div className="bg-[#006399] sticker-border hard-shadow px-2.5 py-1 -rotate-2 rounded-lg flex items-center gap-1">
+            <SpriteIcon name="ui_xp" className="w-4 h-4" />
+            <span className="font-space font-bold text-white text-xs md:text-sm">LVL {level}</span>
           </div>
-          <div className="bg-[#f9f9ff]/90 backdrop-blur-sm sticker-border hard-shadow px-3 py-1 flex items-center gap-1">
-            <span className="material-symbols-outlined text-[#ba1a1a] text-lg">timer</span>
-            <span className="font-space font-bold text-[#161c28] text-sm">{timeFormatted}</span>
+          <div className="bg-white/95 backdrop-blur-sm sticker-border hard-shadow px-2.5 py-1 rounded-lg flex items-center gap-1">
+            <span className="material-symbols-outlined text-[#ba1a1a] text-sm">timer</span>
+            <span className="font-space font-extrabold text-[#161c28] text-xs md:text-sm">{timeFormatted}</span>
           </div>
         </div>
       </header>
 
       {/* Center Screen Elements (Combo Badge & Rush Hour Banner) */}
-      <div className="flex-1 relative flex flex-col items-center justify-start pt-4 pointer-events-none">
+      <div className="flex-1 relative flex flex-col items-center justify-start pt-2 pointer-events-none">
         {/* Rush Hour Event Banner */}
         {isRushHour && (
-          <div className="bg-[#fe6b00] sticker-border hard-shadow px-5 py-2 rounded-xl mb-3 rush-pulse">
-            <span className="font-anybody font-black text-white text-lg tracking-wider uppercase">
+          <div className="bg-[#fe6b00] sticker-border hard-shadow px-4 py-1.5 rounded-xl mb-2 rush-pulse flex items-center gap-2">
+            <SpriteIcon name="effect_combo" className="w-6 h-6" />
+            <span className="font-anybody font-black text-white text-sm md:text-base tracking-wider uppercase">
               🔥 HORA DE PONTA!
             </span>
           </div>
@@ -183,9 +204,10 @@ export const HUD: React.FC<HUDProps> = ({
         {/* Combo Multiplier Badge */}
         {combo > 1 && (
           <div className="combo-float">
-            <div className="bg-[#fe6b00] sticker-border hard-shadow px-4 py-1 rounded-xl">
-              <span className="font-anybody font-black text-white text-xl uppercase">
-                🔥 x{combo}
+            <div className="bg-[#fe6b00] sticker-border hard-shadow px-3.5 py-1 rounded-xl flex items-center gap-1.5">
+              <SpriteIcon name="effect_combo" className="w-6 h-6" />
+              <span className="font-anybody font-black text-white text-lg md:text-xl uppercase">
+                COMBO x{combo}
               </span>
             </div>
           </div>
@@ -193,18 +215,18 @@ export const HUD: React.FC<HUDProps> = ({
 
         {/* Floating Active Taxi Indicator Overlay */}
         {activeTaxi && (
-          <div className="mt-auto mb-20 bg-[#f9f9ff]/95 sticker-border hard-shadow p-2 rounded-xl w-52 flex flex-col gap-1 pointer-events-auto">
+          <div className="mt-auto mb-16 md:mb-20 bg-white/95 sticker-border hard-shadow p-2 rounded-2xl w-48 md:w-56 flex flex-col gap-1 pointer-events-auto">
             <div className="flex justify-between items-center font-space font-bold text-xs">
               <span className="flex items-center gap-1 text-[#161c28]">
-                <span className="material-symbols-outlined text-base">directions_car</span>
-                TÁXI {activeTaxi.route}
+                <SpriteIcon name="destination_viana" className="w-10 h-4" />
+                <span>{activeTaxi.route}</span>
               </span>
-              <span className="bg-[#ffd700] text-[#705e00] px-1.5 py-0.5 rounded border border-[#161c28]">
+              <span className="bg-[#ffd700] text-[#705e00] px-2 py-0.5 rounded-full border border-[#161c28] text-xs">
                 {activeTaxi.currentPassengers}/{activeTaxi.capacity}
               </span>
             </div>
             {/* Progress Bar */}
-            <div className="h-3 w-full bg-slate-200 border-2 border-[#161c28] rounded-full overflow-hidden">
+            <div className="h-3.5 w-full bg-slate-200 border-2 border-[#161c28] rounded-full overflow-hidden">
               <div
                 className="h-full bg-[#ffd700] transition-all duration-300 border-r-2 border-[#161c28]"
                 style={{
@@ -217,64 +239,64 @@ export const HUD: React.FC<HUDProps> = ({
       </div>
 
       {/* Mobile Controls & Stamina Bar Bottom Area */}
-      <div className="flex justify-between items-end pb-2 pointer-events-auto">
+      <div className="flex justify-between items-end pb-1 md:pb-3 pointer-events-auto gap-2">
         {/* Joystick (Left) */}
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex flex-col items-center gap-1">
           <div
             ref={joystickRef}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
-            className="w-32 h-32 bg-slate-800/20 backdrop-blur-sm rounded-full border-4 border-[#161c28]/30 flex items-center justify-center relative touch-none"
+            className="w-28 h-28 md:w-36 md:h-36 bg-slate-900/30 backdrop-blur-md rounded-full border-4 border-[#161c28] flex items-center justify-center relative touch-none hard-shadow"
           >
             {/* Knob */}
             <div
-              className="w-12 h-12 bg-white rounded-full sticker-border hard-shadow-sm absolute top-1/2 left-1/2 flex items-center justify-center transition-transform"
+              className="w-12 h-12 md:w-14 md:h-14 bg-[#ffd700] rounded-full sticker-border hard-shadow-sm absolute top-1/2 left-1/2 flex items-center justify-center transition-transform"
               style={{
                 transform: `translate(calc(-50% + ${joystickPos.x}px), calc(-50% + ${joystickPos.y}px))`,
               }}
             >
-              <div className="w-4 h-4 bg-slate-300 rounded-full" />
+              <div className="w-4 h-4 bg-[#161c28] rounded-full" />
             </div>
-            <span className="material-symbols-outlined absolute top-1 text-slate-700/50 text-sm">
+            <span className="material-symbols-outlined absolute top-1 text-white/70 text-xs">
               arrow_drop_up
             </span>
-            <span className="material-symbols-outlined absolute bottom-1 text-slate-700/50 text-sm">
+            <span className="material-symbols-outlined absolute bottom-1 text-white/70 text-xs">
               arrow_drop_down
             </span>
-            <span className="material-symbols-outlined absolute left-1 text-slate-700/50 text-sm">
+            <span className="material-symbols-outlined absolute left-1 text-white/70 text-xs">
               arrow_left
             </span>
-            <span className="material-symbols-outlined absolute right-1 text-slate-700/50 text-sm">
+            <span className="material-symbols-outlined absolute right-1 text-white/70 text-xs">
               arrow_right
             </span>
           </div>
-          <span className="text-[10px] font-space font-bold text-slate-600 bg-white/80 px-2 py-0.5 rounded-full border border-slate-400">
-            WASD / JOYSTICK
-          </span>
         </div>
 
         {/* Action Buttons (Right) */}
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-end gap-1.5">
           {/* Stamina Bar */}
-          <div className="w-36 bg-slate-200 border-2 border-[#161c28] rounded-full h-3 overflow-hidden hard-shadow-sm">
-            <div
-              className={`h-full transition-all duration-100 ${
-                stamina < 30 ? 'bg-[#ba1a1a]' : 'bg-[#fe6b00]'
-              }`}
-              style={{ width: `${(stamina / maxStamina) * 100}%` }}
-            />
+          <div className="flex items-center gap-1.5 bg-white/90 backdrop-blur-sm px-2 py-0.5 rounded-full border-2 border-[#161c28] hard-shadow-sm">
+            <SpriteIcon name="ui_stamina" className="w-5 h-5" />
+            <div className="w-28 md:w-36 bg-slate-200 border border-[#161c28] rounded-full h-2.5 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-100 ${
+                  stamina < 30 ? 'bg-[#ba1a1a]' : 'bg-[#fe6b00]'
+                }`}
+                style={{ width: `${(stamina / maxStamina) * 100}%` }}
+              />
+            </div>
           </div>
 
-          <div className="flex gap-3 items-end">
+          <div className="flex gap-2 md:gap-3 items-end">
             {/* Interact Button 🤝 */}
             <button
               onClick={onInteractAction}
-              className="w-14 h-14 rounded-full bg-[#006399] sticker-border hard-shadow btn-press flex flex-col items-center justify-center text-white active:scale-95"
+              className="w-13 h-13 md:w-16 md:h-16 rounded-2xl bg-[#006399] sticker-border hard-shadow btn-press flex flex-col items-center justify-center text-white active:scale-95 p-1"
               title="INTERAGIR / METER NO TÁXI [ESPAÇO]"
             >
-              <span className="material-symbols-outlined text-2xl">handshake</span>
-              <span className="text-[9px] font-space font-bold">ESPAÇO</span>
+              <SpriteIcon name="ui_confirm" className="w-6 h-6 md:w-7 md:h-7" />
+              <span className="text-[9px] font-space font-black uppercase">METER</span>
             </button>
 
             {/* Run Button 🏃 */}
@@ -283,21 +305,21 @@ export const HUD: React.FC<HUDProps> = ({
               onTouchEnd={() => onRunToggle(false)}
               onMouseDown={() => onRunToggle(true)}
               onMouseUp={() => onRunToggle(false)}
-              className="w-14 h-14 rounded-full bg-[#fe6b00] sticker-border hard-shadow btn-press flex flex-col items-center justify-center text-white active:scale-95 mb-4"
+              className="w-13 h-13 md:w-16 md:h-16 rounded-2xl bg-[#fe6b00] sticker-border hard-shadow btn-press flex flex-col items-center justify-center text-white active:scale-95 mb-2 p-1"
               title="CORRER [SHIFT]"
             >
-              <span className="material-symbols-outlined text-2xl">directions_run</span>
-              <span className="text-[9px] font-space font-bold">SHIFT</span>
+              <SpriteIcon name="effect_turbo" className="w-6 h-6 md:w-7 md:h-7" />
+              <span className="text-[9px] font-space font-black uppercase">CORRE</span>
             </button>
 
             {/* Call Button 📢 (Primary) */}
             <button
               onClick={onCallAction}
-              className="w-20 h-20 rounded-full bg-[#ffd700] sticker-border hard-shadow-lg btn-press flex flex-col items-center justify-center text-[#705e00] active:scale-95"
+              className="w-18 h-18 md:w-22 md:h-22 rounded-3xl bg-[#ffd700] sticker-border hard-shadow-lg btn-press flex flex-col items-center justify-center text-[#161c28] active:scale-95 p-1.5"
               title="CHAMAR PASSAGEIROS [E]"
             >
-              <span className="material-symbols-outlined text-3xl font-black">campaign</span>
-              <span className="text-[10px] font-space font-bold uppercase mt-0.5">CHAMA [E]</span>
+              <SpriteIcon name="effect_megaphone" className="w-9 h-9 md:w-11 md:h-11" />
+              <span className="text-[10px] md:text-xs font-anybody font-black uppercase mt-0.5">CHAMA!</span>
             </button>
           </div>
         </div>
@@ -305,3 +327,4 @@ export const HUD: React.FC<HUDProps> = ({
     </div>
   );
 };
+
