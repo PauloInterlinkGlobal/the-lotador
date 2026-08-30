@@ -7,6 +7,8 @@ export interface SpriteFrame {
   y: number;
   width: number;
   height: number;
+  /** Which source image this frame is cropped from. Defaults to 'main' when omitted. */
+  source?: 'main' | 'player1';
 }
 
 export const ATLAS_WIDTH = 1448;
@@ -236,4 +238,30 @@ export const ATLAS_FRAMES: Record<string, SpriteFrame> = {
   destination_talatona: { x: 1000, y: 835, width: 145, height: 52 },
   destination_centro: { x: 1000, y: 890, width: 145, height: 52 },
   logo_lotador: { x: 1160, y: 835, width: 270, height: 210 },
+
+  // ===== CÁÇA Player (real directional sprites, player1_spritesheet.png) =====
+  // IMPORTANT: these are the *exact* pixel bounding boxes measured directly
+  // from the actual 412x900 player1_spritesheet.png (auto-detected via the
+  // image's alpha channel). Only 1 idle frame + 2 run frames exist per
+  // direction in the real asset — there is no idle_1, run_2 or run_3.
+  // Using coordinates that don't match the real file is exactly what causes
+  // the character to render cropped/squashed/blank.
+  player_front_idle_0: { x: 7, y: 4, width: 80, height: 218, source: 'player1' },
+  player_front_run_0: { x: 112, y: 4, width: 104, height: 220, source: 'player1' },
+  player_front_run_1: { x: 275, y: 4, width: 98, height: 220, source: 'player1' },
+
+  player_back_idle_0: { x: 6, y: 229, width: 79, height: 218, source: 'player1' },
+  player_back_run_0: { x: 118, y: 228, width: 93, height: 220, source: 'player1' },
+  player_back_run_1: { x: 278, y: 228, width: 93, height: 220, source: 'player1' },
+
+  player_left_idle_0: { x: 17, y: 454, width: 55, height: 218, source: 'player1' },
+  player_left_run_0: { x: 92, y: 452, width: 145, height: 220, source: 'player1' },
+  player_left_run_1: { x: 241, y: 452, width: 167, height: 220, source: 'player1' },
+
+  player_right_idle_0: { x: 19, y: 678, width: 55, height: 217, source: 'player1' },
+  player_right_run_0: { x: 92, y: 676, width: 145, height: 220, source: 'player1' },
+  player_right_run_1: { x: 241, y: 676, width: 167, height: 220, source: 'player1' },
 };
+
+export const ATLAS_PLAYER1_WIDTH = 412;
+export const ATLAS_PLAYER1_HEIGHT = 900;

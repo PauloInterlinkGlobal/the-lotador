@@ -404,7 +404,7 @@ export class GameEngine {
   }
 
   private initPlayer() {
-    this.playerMesh = this.createStylizedCharacter(0xffd700, 0x006399, true, 'player_male_idle_0');
+    this.playerMesh = this.createStylizedCharacter(0xffd700, 0x006399, true, 'player_front_idle_0');
     this.playerMesh.position.copy(this.playerPos);
     this.scene.add(this.playerMesh);
 
@@ -465,12 +465,22 @@ export class GameEngine {
     const group = new THREE.Group();
 
     // 2D Billboard Sprite using real Atlas Frame
-    const frameKey = spriteFrameName || (isPlayer ? 'player_male_idle_0' : 'passenger_normal');
+    const frameKey = spriteFrameName || (isPlayer ? 'player_front_idle_0' : 'passenger_normal');
     const tex = spriteAtlasManager.getTexture(frameKey);
     const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.1 });
     const sprite = new THREE.Sprite(spriteMat);
-    sprite.scale.set(1.4, 2.2, 1);
-    sprite.position.y = 1.1;
+    // Player uses larger scale for the new taller CÁÇA art. Scale proportionally
+    // to the frame's real aspect ratio so the character never looks
+    // squashed/stretched/cropped (this player's frames vary in width).
+    if (isPlayer) {
+      const { width: fw, height: fh } = spriteAtlasManager.getFrameSize(frameKey);
+      const worldHeight = 2.8;
+      const aspect = fh > 0 ? fw / fh : 0.4;
+      sprite.scale.set(worldHeight * aspect, worldHeight, 1);
+    } else {
+      sprite.scale.set(1.4, 2.2, 1);
+    }
+    sprite.position.y = isPlayer ? 1.35 : 1.1;
     group.add(sprite);
 
     // Subtle base shadow
@@ -839,27 +849,47 @@ export class GameEngine {
     // Decay turn tilt smoothly back to 0
     this.playerTurnTilt = THREE.MathUtils.lerp(this.playerTurnTilt, 0, 10 * delta);
 
-    // Animation State Machine for Player
-    const genderPrefix = this.playerStats.selectedGender === 'F' ? 'player_female' : 'player_male';
-    let frameKey = `${genderPrefix}_idle_0`;
+    // Animation State Machine for Player (CÁÇA - 4 directional sprites)
+    // Determine facing direction based on velocity
+    let direction = 'front';
+    const absDx = Math.abs(actualDx);
+    const absDz = Math.abs(this.playerVel.z || 0);
+
+    if (isMoving) {
+      if (absDx > absDz * 0.7) {
+        // Horizontal movement dominates
+        direction = actualDx < 0 ? 'left' : 'right';
+      } else {
+        // Vertical movement dominates (or equal)
+        // In this game +Z is usually "down/south" on screen, -Z is "up/north"
+        direction = (this.playerVel.z || 0) > 0.01 ? 'front' : 'back';
+      }
+    } else {
+      // Keep last facing when stopped
+      direction = this.playerFacingLeft ? 'left' : 'right';
+      // Prefer front when idle for better visibility
+      if (Math.abs(this.playerVel.x) < 0.01 && Math.abs(this.playerVel.z) < 0.01) {
+        direction = 'front';
+      }
+    }
+
+    let frameKey = `player_${direction}_idle_0`;
     let yBob = 0;
     let shadowScale = 1.0;
     let shadowOpacity = 0.3;
 
     if (isMoving || this.isCalling) {
       const isRunning = this.isRunning && isMoving;
-      const animState = isRunning ? 'run' : 'walk';
-      const strideLength = isRunning ? 0.38 : 0.52; // Units per frame step
+      const strideLength = isRunning ? 0.32 : 0.48;
 
       this.playerAnimDistance += actualDist;
-      const frameCount = 8;
+      const frameCount = 2; // real player1_spritesheet.png only has run_0/run_1
       const currentStep = Math.floor(this.playerAnimDistance / strideLength);
       const frameIndex = currentStep % frameCount;
 
-      // Synchronize Footsteps & Foot Dust Particles on foot strike frames (0 and 4)
       if (currentStep !== this.prevPlayerAnimStep) {
         this.prevPlayerAnimStep = currentStep;
-        if (frameIndex === 0 || frameIndex === 4) {
+        if (frameIndex === 0 || frameIndex === 2) {
           soundManager.playStep(isRunning);
           this.spawnDustParticle(
             this.playerPos.x,
@@ -870,27 +900,25 @@ export class GameEngine {
         }
       }
 
-      frameKey = `${genderPrefix}_${animState}_${frameIndex}`;
+      frameKey = `player_${direction}_run_${frameIndex}`;
 
-      // Vertical bob & dynamic shadow scale
       const stepPhase = (this.playerAnimDistance / strideLength) * Math.PI;
-      yBob = Math.abs(Math.sin(stepPhase)) * (isRunning ? 0.12 : 0.07);
+      yBob = Math.abs(Math.sin(stepPhase)) * (isRunning ? 0.10 : 0.06);
       shadowScale = 1.0 - yBob * 0.8;
       shadowOpacity = 0.35 - yBob * 0.15;
     } else if (this.playerSkidTimer > 0) {
-      // Stopping / Skid frame
       this.playerSkidTimer -= delta;
-      frameKey = `${genderPrefix}_walk_1`;
+      frameKey = `player_${direction}_run_1`;
       yBob = -0.04;
-      this.playerTurnTilt = this.playerFacingLeft ? -0.15 : 0.15;
+      this.playerTurnTilt = this.playerFacingLeft ? -0.12 : 0.12;
       if (Math.random() < 0.3) {
         this.spawnDustParticle(this.playerPos.x, 0.02, this.playerPos.z, 0.35);
       }
     } else {
-      // Clean, stable idle frame when stopped
-      frameKey = `${genderPrefix}_idle_0`;
+      // Idle – only idle_0 exists in the real spritesheet; gentle bob instead
       this.idleBreathTimer += delta;
-      yBob = Math.sin(this.idleBreathTimer * 3) * 0.012; // Gentle breathing idle
+      frameKey = `player_${direction}_idle_0`;
+      yBob = Math.sin(this.idleBreathTimer * 3) * 0.012;
     }
 
     const spriteObj = this.playerMesh.children.find((c) => c instanceof THREE.Sprite) as THREE.Sprite;
@@ -901,8 +929,15 @@ export class GameEngine {
     if (spriteObj) {
       spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
       spriteObj.material.needsUpdate = true;
-      spriteObj.scale.set(this.playerFacingLeft ? -1.4 : 1.4, 2.2, 1);
-      spriteObj.position.y = 1.1 + yBob;
+      // New sprites already face the correct direction – no need to flip scale.x
+      // Frames have different aspect ratios (wide diagonal running poses vs
+      // narrow front/back poses); scale proportionally so nothing looks
+      // squashed/stretched or "cropped".
+      const { width: fw, height: fh } = spriteAtlasManager.getFrameSize(frameKey);
+      const worldHeight = 2.8;
+      const aspect = fh > 0 ? fw / fh : 0.4;
+      spriteObj.scale.set(worldHeight * aspect, worldHeight, 1);
+      spriteObj.position.y = 1.35 + yBob;
       spriteObj.rotation.z = this.playerTurnTilt;
     }
 

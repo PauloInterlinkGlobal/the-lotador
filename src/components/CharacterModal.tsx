@@ -33,7 +33,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
     return () => clearInterval(interval);
   }, [testAnim]);
 
-  const handleGenderSelect = (gender: 'M' | 'F') => {
+  const handleGenderSelect = (gender: 'M' | 'F' | 'NELO') => {
     soundManager.playClick();
     const updated = { ...stats, selectedGender: gender };
     savePlayerStats(updated);
@@ -54,13 +54,19 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
     onUpdateStats(updated);
   };
 
+  const isNelo = stats.selectedGender === 'NELO';
   const genderPrefix = stats.selectedGender === 'F' ? 'player_female' : 'player_male';
-  const previewFrameKey =
-    testAnim === 'idle'
-      ? `${genderPrefix}_idle_${animFrame % 2}`
+  const previewFrameKey = isNelo
+    ? testAnim === 'idle'
+      ? 'player_front_idle_0'
       : testAnim === 'call'
-      ? `${genderPrefix}_walk_2`
-      : `${genderPrefix}_${testAnim}_${animFrame}`;
+      ? 'player_front_run_0'
+      : `player_front_run_${animFrame % 2}`
+    : testAnim === 'idle'
+    ? `${genderPrefix}_idle_${animFrame % 2}`
+    : testAnim === 'call'
+    ? `${genderPrefix}_walk_2`
+    : `${genderPrefix}_${testAnim}_${animFrame}`;
 
   return (
     <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 select-none">
@@ -141,15 +147,15 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
           </div>
         </div>
 
-        {/* Gender Selection */}
+        {/* Gender / Character Selection */}
         <div className="w-full mb-3">
           <span className="font-space font-bold text-xs text-slate-600 block mb-1.5 uppercase">
-            Gênero do Lotador:
+            Personagem:
           </span>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => handleGenderSelect('M')}
-              className={`py-2 px-3 rounded-xl border-2 border-[#161c28] font-space font-bold text-xs flex items-center justify-center gap-2 ${
+              className={`py-2 px-2 rounded-xl border-2 border-[#161c28] font-space font-bold text-[11px] flex flex-col items-center justify-center gap-1 ${
                 stats.selectedGender === 'M' ? 'bg-[#ffd700] hard-shadow-sm' : 'bg-slate-100'
               }`}
             >
@@ -158,12 +164,21 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
             </button>
             <button
               onClick={() => handleGenderSelect('F')}
-              className={`py-2 px-3 rounded-xl border-2 border-[#161c28] font-space font-bold text-xs flex items-center justify-center gap-2 ${
+              className={`py-2 px-2 rounded-xl border-2 border-[#161c28] font-space font-bold text-[11px] flex flex-col items-center justify-center gap-1 ${
                 stats.selectedGender === 'F' ? 'bg-[#ffd700] hard-shadow-sm' : 'bg-slate-100'
               }`}
             >
               <SpriteIcon name="player_female_idle_0" className="w-7 h-9" />
               <span>LOTADORA</span>
+            </button>
+            <button
+              onClick={() => handleGenderSelect('NELO')}
+              className={`py-2 px-2 rounded-xl border-2 border-[#161c28] font-space font-bold text-[11px] flex flex-col items-center justify-center gap-1 ${
+                stats.selectedGender === 'NELO' ? 'bg-[#ffd700] hard-shadow-sm' : 'bg-slate-100'
+              }`}
+            >
+              <SpriteIcon name="player_front_idle_0" className="w-7 h-9" />
+              <span>NELO</span>
             </button>
           </div>
         </div>
