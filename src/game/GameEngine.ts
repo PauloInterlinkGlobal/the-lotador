@@ -90,6 +90,7 @@ export class GameEngine {
   private playerAnimDistance = 0;
   private playerAnimFrameTimer = 0;
   private playerAnimFrameIndex = 0;
+  private playerFacingDir: 'front' | 'back' | 'left' | 'right' = 'front';
   private playerFacingLeft = false;
   private prevPlayerFacingLeft = false;
   private prevPlayerAnimStep = 0;
@@ -850,27 +851,27 @@ export class GameEngine {
     this.playerTurnTilt = THREE.MathUtils.lerp(this.playerTurnTilt, 0, 10 * delta);
 
     // Animation State Machine for Player (CÁÇA - 4 directional sprites)
-    // Determine facing direction based on velocity
-    let direction = 'front';
+    // Determine facing direction based on actual movement delta:
+    // +Z = Up / Forward towards background (walks away -> back sprite)
+    // -Z = Down / Backward towards road / camera (walks towards camera -> front sprite)
+    // +X = Right (walks right -> right sprite)
+    // -X = Left (walks left -> left sprite)
+    let direction = this.playerFacingDir || 'front';
     const absDx = Math.abs(actualDx);
-    const absDz = Math.abs(this.playerVel.z || 0);
+    const absDz = Math.abs(actualDz);
 
     if (isMoving) {
-      if (absDx > absDz * 0.7) {
+      if (absDx >= absDz) {
         // Horizontal movement dominates
         direction = actualDx < 0 ? 'left' : 'right';
       } else {
-        // Vertical movement dominates (or equal)
-        // In this game +Z is usually "down/south" on screen, -Z is "up/north"
-        direction = (this.playerVel.z || 0) > 0.01 ? 'front' : 'back';
+        // Vertical movement dominates
+        direction = actualDz > 0 ? 'back' : 'front';
       }
+      this.playerFacingDir = direction as 'front' | 'back' | 'left' | 'right';
     } else {
-      // Keep last facing when stopped
-      direction = this.playerFacingLeft ? 'left' : 'right';
-      // Prefer front when idle for better visibility
-      if (Math.abs(this.playerVel.x) < 0.01 && Math.abs(this.playerVel.z) < 0.01) {
-        direction = 'front';
-      }
+      // Keep last facing direction when stopped
+      direction = this.playerFacingDir || 'front';
     }
 
     let frameKey = `player_${direction}_idle_0`;

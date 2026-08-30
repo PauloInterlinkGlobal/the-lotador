@@ -254,13 +254,15 @@ export const ATLAS_FRAMES: Record<string, SpriteFrame> = {
   player_back_run_0: { x: 118, y: 228, width: 93, height: 220, source: 'player1' },
   player_back_run_1: { x: 278, y: 228, width: 93, height: 220, source: 'player1' },
 
-  player_left_idle_0: { x: 17, y: 454, width: 55, height: 218, source: 'player1' },
-  player_left_run_0: { x: 92, y: 452, width: 145, height: 220, source: 'player1' },
-  player_left_run_1: { x: 241, y: 452, width: 167, height: 220, source: 'player1' },
+  // Row 3 (y: 452..672): Faces Right (running/facing right in player1_spritesheet.png)
+  player_right_idle_0: { x: 17, y: 454, width: 55, height: 218, source: 'player1' },
+  player_right_run_0: { x: 92, y: 452, width: 145, height: 220, source: 'player1' },
+  player_right_run_1: { x: 241, y: 452, width: 167, height: 220, source: 'player1' },
 
-  player_right_idle_0: { x: 19, y: 678, width: 55, height: 217, source: 'player1' },
-  player_right_run_0: { x: 92, y: 676, width: 145, height: 220, source: 'player1' },
-  player_right_run_1: { x: 241, y: 676, width: 167, height: 220, source: 'player1' },
+  // Row 4 (y: 676..896): Faces Left (running/facing left in player1_spritesheet.png)
+  player_left_idle_0: { x: 19, y: 678, width: 55, height: 217, source: 'player1' },
+  player_left_run_0: { x: 92, y: 676, width: 145, height: 220, source: 'player1' },
+  player_left_run_1: { x: 241, y: 676, width: 167, height: 220, source: 'player1' },
 };
 
 export const ATLAS_PLAYER1_WIDTH = 412;
