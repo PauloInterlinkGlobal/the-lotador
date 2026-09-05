@@ -933,14 +933,19 @@ export class GameEngine {
     if (spriteObj) {
       spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
       spriteObj.material.needsUpdate = true;
-      // New sprites already face the correct direction – no need to flip scale.x
-      // Frames have different aspect ratios (wide diagonal running poses vs
-      // narrow front/back poses); scale proportionally so nothing looks
-      // squashed/stretched or "cropped".
+      // Frames have different aspect ratios (wide running poses vs narrow
+      // front/back poses); scale proportionally so nothing looks squashed or
+      // stretched. The run frames in player1_spritesheet.png are mirrored
+      // relative to their labels (player_right_run faces left, player_left_run
+      // faces right), so flip the side run frames horizontally to make the
+      // character face the direction it walks/runs. Idle frames are oriented
+      // correctly and are left untouched.
       const { width: fw, height: fh } = spriteAtlasManager.getFrameSize(frameKey);
       const worldHeight = 2.8;
       const aspect = fh > 0 ? fw / fh : 0.4;
-      spriteObj.scale.set(worldHeight * aspect, worldHeight, 1);
+      const flipX = (direction === 'left' || direction === 'right') && frameKey.includes('_run_');
+      const sx = worldHeight * aspect;
+      spriteObj.scale.set(flipX ? -sx : sx, worldHeight, 1);
       spriteObj.position.y = 1.35 + yBob;
       spriteObj.rotation.z = this.playerTurnTilt;
     }
