@@ -857,8 +857,10 @@ export class GameEngine {
     // Determine facing direction based on actual movement delta (screen space):
     // +Z = Up / Forward towards background (walks away -> back sprite)
     // -Z = Down / Backward towards road / camera (walks towards camera -> front sprite)
-    // Because the camera looks toward +Z, world -X is screen-RIGHT and
-    // world +X is screen-LEFT, so the horizontal sprite picks are swapped.
+    // The camera looks toward +Z, so world -X is screen-RIGHT and world +X is
+    // screen-LEFT. The spritesheet's left/right labels are ALSO swapped
+    // (player_right_* faces left, player_left_* faces right), so the two
+    // inversions cancel out: pick the label matching the world delta sign.
     let direction = this.playerFacingDir || 'front';
     const absDx = Math.abs(actualDx);
     const absDz = Math.abs(actualDz);
@@ -866,7 +868,7 @@ export class GameEngine {
     if (isMoving) {
       if (absDx >= absDz) {
         // Horizontal movement dominates
-        direction = actualDx < 0 ? 'right' : 'left';
+        direction = actualDx < 0 ? 'left' : 'right';
       } else {
         // Vertical movement dominates
         direction = actualDz > 0 ? 'back' : 'front';
@@ -935,17 +937,14 @@ export class GameEngine {
       spriteObj.material.needsUpdate = true;
       // Frames have different aspect ratios (wide running poses vs narrow
       // front/back poses); scale proportionally so nothing looks squashed or
-      // stretched. The run frames in player1_spritesheet.png are mirrored
-      // relative to their labels (player_right_run faces left, player_left_run
-      // faces right), so flip the side run frames horizontally to make the
-      // character face the direction it walks/runs. Idle frames are oriented
-      // correctly and are left untouched.
+      // stretched. No horizontal flip is needed: the spritesheet's left/right
+      // labels are swapped (player_right_* faces left, player_left_* faces
+      // right), and the direction logic above already picks the opposite
+      // label to compensate, so the character faces its travel direction.
       const { width: fw, height: fh } = spriteAtlasManager.getFrameSize(frameKey);
       const worldHeight = 2.8;
       const aspect = fh > 0 ? fw / fh : 0.4;
-      const flipX = (direction === 'left' || direction === 'right') && frameKey.includes('_run_');
-      const sx = worldHeight * aspect;
-      spriteObj.scale.set(flipX ? -sx : sx, worldHeight, 1);
+      spriteObj.scale.set(worldHeight * aspect, worldHeight, 1);
       spriteObj.position.y = 1.35 + yBob;
       spriteObj.rotation.z = this.playerTurnTilt;
     }
