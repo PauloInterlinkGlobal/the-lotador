@@ -796,7 +796,10 @@ export class GameEngine {
     const targetSpeed = this.isRunning ? this.playerSpeed * 1.5 : this.playerSpeed;
     const isInputMoving = this.inputDir.x !== 0 || this.inputDir.z !== 0;
 
-    const targetVelX = isInputMoving ? this.inputDir.x * targetSpeed : 0;
+    // Camera looks toward +Z, so world +X renders on the LEFT of the screen
+    // (screen-right = world -X). Invert the horizontal input so pressing right
+    // moves the player to the right on screen.
+    const targetVelX = isInputMoving ? -this.inputDir.x * targetSpeed : 0;
     const targetVelZ = isInputMoving ? this.inputDir.z * targetSpeed : 0;
 
     // Smooth physics: acceleration vs braking lerp
@@ -851,11 +854,11 @@ export class GameEngine {
     this.playerTurnTilt = THREE.MathUtils.lerp(this.playerTurnTilt, 0, 10 * delta);
 
     // Animation State Machine for Player (CÁÇA - 4 directional sprites)
-    // Determine facing direction based on actual movement delta:
+    // Determine facing direction based on actual movement delta (screen space):
     // +Z = Up / Forward towards background (walks away -> back sprite)
     // -Z = Down / Backward towards road / camera (walks towards camera -> front sprite)
-    // +X = Right (walks right -> right sprite)
-    // -X = Left (walks left -> left sprite)
+    // Because the camera looks toward +Z, world -X is screen-RIGHT and
+    // world +X is screen-LEFT, so the horizontal sprite picks are swapped.
     let direction = this.playerFacingDir || 'front';
     const absDx = Math.abs(actualDx);
     const absDz = Math.abs(actualDz);
@@ -863,7 +866,7 @@ export class GameEngine {
     if (isMoving) {
       if (absDx >= absDz) {
         // Horizontal movement dominates
-        direction = actualDx < 0 ? 'left' : 'right';
+        direction = actualDx < 0 ? 'right' : 'left';
       } else {
         // Vertical movement dominates
         direction = actualDz > 0 ? 'back' : 'front';
@@ -930,14 +933,19 @@ export class GameEngine {
     if (spriteObj) {
       spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
       spriteObj.material.needsUpdate = true;
-      // New sprites already face the correct direction – no need to flip scale.x
-      // Frames have different aspect ratios (wide diagonal running poses vs
-      // narrow front/back poses); scale proportionally so nothing looks
-      // squashed/stretched or "cropped".
+      // Frames have different aspect ratios (wide running poses vs narrow
+      // front/back poses); scale proportionally so nothing looks squashed or
+      // stretched. The run frames in player1_spritesheet.png are mirrored
+      // relative to their labels (player_right_run faces left, player_left_run
+      // faces right), so flip the side run frames horizontally to make the
+      // character face the direction it walks/runs. Idle frames are oriented
+      // correctly and are left untouched.
       const { width: fw, height: fh } = spriteAtlasManager.getFrameSize(frameKey);
       const worldHeight = 2.8;
       const aspect = fh > 0 ? fw / fh : 0.4;
-      spriteObj.scale.set(worldHeight * aspect, worldHeight, 1);
+      const flipX = (direction === 'left' || direction === 'right') && frameKey.includes('_run_');
+      const sx = worldHeight * aspect;
+      spriteObj.scale.set(flipX ? -sx : sx, worldHeight, 1);
       spriteObj.position.y = 1.35 + yBob;
       spriteObj.rotation.z = this.playerTurnTilt;
     }
