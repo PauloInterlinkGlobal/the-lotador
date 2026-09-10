@@ -3,8 +3,9 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { PlayerStats, MatchResults, Taxi, Passenger } from './types/game';
-import { loadPlayerStats, savePlayerStats, getXpForNextLevel } from './utils/storage';
+import { PlayerStats, MatchResults, Taxi, Passenger, PassengerDispute } from './types/game';
+import { loadPlayerStats, savePlayerStats, getXpForNextLevel, DEFAULT_MISSIONS } from './utils/storage';
+import { storageManager } from './services/storageService';
 import { soundManager } from './utils/audio';
 import { GameEngine } from './game/GameEngine';
 
@@ -17,12 +18,20 @@ import { CharacterModal } from './components/CharacterModal';
 import { MapSelectModal } from './components/MapSelectModal';
 import { MissionsModal } from './components/MissionsModal';
 import { SettingsModal } from './components/SettingsModal';
+import { HowToPlayGuide } from './components/HowToPlayGuide';
+import { PauseModal } from './components/PauseModal';
+import { PWAStatusBanner } from './components/PWAStatusBanner';
+import { TutorialOverlay, TutorialStep } from './components/TutorialOverlay';
 
 type AppScreen = 'MENU' | 'GAME' | 'RESULT';
 
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>('MENU');
   const [stats, setStats] = useState<PlayerStats>(loadPlayerStats());
+
+  // Tutorial State
+  const [isTutorial, setIsTutorial] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState<TutorialStep>(TutorialStep.INTRO);
 
   // Game Engine State
   const canvasContainerRef = useRef<HTMLDivElement>(null);
@@ -38,23 +47,44 @@ export default function App() {
   const [isRushHour, setIsRushHour] = useState(false);
   const [taxis, setTaxis] = useState<Taxi[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
+  const [activeDispute, setActiveDispute] = useState<PassengerDispute | null>(null);
+  const [floatingToasts, setFloatingToasts] = useState<{ id: number; text: string; color: string }[]>([]);
 
   // Results State
   const [matchResults, setMatchResults] = useState<MatchResults | null>(null);
 
   // Modals
   const [activeModal, setActiveModal] = useState<
-    'UPGRADES' | 'CHARACTER' | 'MAPS' | 'MISSIONS' | 'SETTINGS' | 'MENTOR' | null
+    'UPGRADES' | 'CHARACTER' | 'MAPS' | 'MISSIONS' | 'SETTINGS' | 'MENTOR' | 'GUIDE' | null
   >(null);
+  const [isPaused, setIsPaused] = useState(false);
+
+  // Request persistent storage on mount (prevents browser data eviction)
+  useEffect(() => {
+    storageManager.requestPersistentStorage();
+  }, []);
+
+  // Sync engine pause state
+  useEffect(() => {
+    if (engineRef.current) {
+      engineRef.current.isPaused = isPaused || activeModal !== null;
+    }
+  }, [isPaused, activeModal]);
 
   // Match Timer Interval
   useEffect(() => {
     let timer: any = null;
-    if (screen === 'GAME' && timerSeconds > 0) {
+    if (
+      screen === 'GAME' &&
+      !isPaused &&
+      !activeModal &&
+      timerSeconds > 0 &&
+      !(isTutorial && tutorialStep === TutorialStep.INTRO)
+    ) {
       timer = setInterval(() => {
         setTimerSeconds((prev) => {
           if (prev <= 1) {
-            endMatch();
+            endMatch(false);
             return 0;
           }
 
@@ -68,7 +98,7 @@ export default function App() {
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [screen, timerSeconds]);
+  }, [screen, isPaused, activeModal, timerSeconds, isTutorial, tutorialStep]);
 
   // Sync Taxis and Passengers for HUD overlay
   useEffect(() => {
@@ -84,13 +114,20 @@ export default function App() {
     return () => clearInterval(interval);
   }, [screen]);
 
-  const startMatch = () => {
+  const startMatch = (forceTutorial = false) => {
     soundManager.playClick();
+    const runTutorial = forceTutorial || (!stats.tutorialCompleted && stats.level === 1);
+    setIsTutorial(runTutorial);
+    setTutorialStep(TutorialStep.INTRO);
+
     setMatchKz(0);
     setMatchXp(0);
     setMatchCombo(1);
     setTimerSeconds(180);
     setIsRushHour(false);
+    setActiveDispute(null);
+    setFloatingToasts([]);
+    setIsPaused(false);
     setScreen('GAME');
 
     soundManager.startBackgroundRhythm(false);
@@ -98,34 +135,85 @@ export default function App() {
     // Initialize 3D Game Engine after canvas mount
     setTimeout(() => {
       if (canvasContainerRef.current) {
-        engineRef.current = new GameEngine(canvasContainerRef.current, stats, {
-          onScoreUpdate: (kz, xp, combo) => {
-            setMatchKz(kz);
-            setMatchXp(xp);
-            setMatchCombo(combo);
+        engineRef.current = new GameEngine(
+          canvasContainerRef.current,
+          stats,
+          {
+            onScoreUpdate: (kz, xp, combo) => {
+              setMatchKz(kz);
+              setMatchXp(xp);
+              setMatchCombo(combo);
+            },
+            onTaxiLoaded: (taxi, reward, xp) => {
+              // Check for rush hour condition
+              if (engineRef.current && engineRef.current.taxisLoadedCount >= 5 && !engineRef.current.isRushHour) {
+                engineRef.current.toggleRushHour(true);
+              }
+            },
+            onFloatingText: (text, color, pos) => {
+              const id = Date.now() + Math.random();
+              setFloatingToasts((prev) => [...prev.slice(-3), { id, text, color }]);
+              setTimeout(() => {
+                setFloatingToasts((prev) => prev.filter((t) => t.id !== id));
+              }, 2600);
+            },
+            onRushHourState: (isRush) => setIsRushHour(isRush),
+            onStaminaChange: (cur, max) => {
+              setStamina(cur);
+              setMaxStamina(max);
+            },
+            onPassengerServedCount: (count) => {},
+            onDisputeUpdate: (dispute) => {
+              setActiveDispute(dispute ? { ...dispute } : null);
+            },
+            onPlayerMove: (dist) => {
+              if (runTutorial) {
+                setTutorialStep((prev) => {
+                  if (prev === TutorialStep.MOVE && dist >= 2.8) {
+                    return TutorialStep.APPROACH_PASSENGER;
+                  }
+                  return prev;
+                });
+              }
+            },
+            onPassengerFollowed: () => {
+              if (runTutorial) {
+                setTutorialStep((prev) => {
+                  if (prev === TutorialStep.CALL_PASSENGER) {
+                    return TutorialStep.LEAD_TO_TAXI;
+                  }
+                  return prev;
+                });
+              }
+            },
+            onPassengerBoarded: () => {
+              if (runTutorial) {
+                setTutorialStep((prev) => {
+                  if (prev === TutorialStep.BOARD_TAXI) {
+                    return TutorialStep.SCORE_MONEY;
+                  }
+                  return prev;
+                });
+              }
+            },
+            onPlayerRunStart: () => {},
           },
-          onTaxiLoaded: (taxi, reward, xp) => {
-            // Check for rush hour condition
-            if (engineRef.current && engineRef.current.taxisLoadedCount >= 5 && !isRushHour) {
-              engineRef.current.toggleRushHour(true);
-            }
-          },
-          onFloatingText: (text, color, pos) => {},
-          onRushHourState: (isRush) => setIsRushHour(isRush),
-          onStaminaChange: (cur, max) => {
-            setStamina(cur);
-            setMaxStamina(max);
-          },
-          onPassengerServedCount: (count) => {},
-        });
+          { isTutorial: runTutorial }
+        );
       }
     }, 100);
   };
 
-  const endMatch = () => {
+  const endMatch = (victoryParam?: boolean) => {
     if (engineRef.current) {
       const engine = engineRef.current;
       const isNewRecord = engine.matchKz > stats.bestScore;
+      const isVictory =
+        victoryParam !== undefined
+          ? victoryParam
+          : isTutorial
+          ? engine.passengersServedCount >= 2 || engine.taxisLoadedCount >= 1
+          : true;
 
       // Update Player Stats & Level Up Logic
       let newMoney = stats.money + engine.matchKz;
@@ -151,10 +239,25 @@ export default function App() {
         taxisLoaded: newTaxisLoaded,
         passengersServed: newPassengers,
         maxCombo: Math.max(stats.maxCombo, engine.combo),
+        tutorialCompleted: isTutorial && isVictory ? true : stats.tutorialCompleted,
       };
 
       savePlayerStats(updatedStats);
       setStats(updatedStats);
+
+      storageManager.recordFinishedMatch(
+        {
+          id: `match_${Date.now()}`,
+          timestamp: Date.now(),
+          score: engine.matchKz,
+          moneyEarned: engine.matchKz,
+          taxisLoaded: engine.taxisLoadedCount,
+          passengersServed: engine.passengersServedCount,
+          zoneId: stats.selectedMapId || 'paragem_central',
+          maxCombo: engine.combo,
+        },
+        updatedStats
+      );
 
       const res: MatchResults = {
         taxisLoaded: engine.taxisLoadedCount,
@@ -164,6 +267,8 @@ export default function App() {
         earnedXp: engine.matchXp,
         isNewRecord,
         duration: 180 - timerSeconds,
+        isTutorial,
+        isVictory,
       };
 
       setMatchResults(res);
@@ -175,18 +280,36 @@ export default function App() {
     setScreen('RESULT');
   };
 
+  const tutorialHighlight = isTutorial
+    ? tutorialStep === TutorialStep.MOVE
+      ? 'JOYSTICK'
+      : tutorialStep === TutorialStep.CALL_PASSENGER
+      ? 'CALL'
+      : tutorialStep === TutorialStep.SCORE_MONEY
+      ? 'MONEY'
+      : tutorialStep === TutorialStep.RUN_STAMINA
+      ? 'RUN'
+      : tutorialStep === TutorialStep.OBJECTIVES
+      ? 'OBJECTIVES'
+      : tutorialStep === TutorialStep.TIMER
+      ? 'TIMER'
+      : null
+    : null;
+
   return (
     <div className="relative w-full h-screen bg-[#f9f9ff] overflow-hidden select-none">
       {/* Main Menu Screen */}
       {screen === 'MENU' && (
         <MainMenu
           stats={stats}
-          onStartGame={startMatch}
+          onStartGame={() => startMatch(false)}
+          onStartTutorial={() => startMatch(true)}
           onOpenUpgrades={() => setActiveModal('UPGRADES')}
           onOpenCharacter={() => setActiveModal('CHARACTER')}
           onOpenMaps={() => setActiveModal('MAPS')}
           onOpenMissions={() => setActiveModal('MISSIONS')}
           onOpenSettings={() => setActiveModal('SETTINGS')}
+          onOpenGuide={() => setActiveModal('GUIDE')}
         />
       )}
 
@@ -208,6 +331,8 @@ export default function App() {
             taxis={taxis}
             passengers={passengers}
             taxisLoadedCount={engineRef.current?.taxisLoadedCount || 0}
+            activeDispute={activeDispute}
+            floatingToasts={floatingToasts}
             onCallAction={() => engineRef.current?.triggerCallAction()}
             onInteractAction={() => engineRef.current?.triggerInteractAction()}
             onJoystickMove={(dir) =>
@@ -218,7 +343,51 @@ export default function App() {
                 engineRef.current.updateInputs(engineRef.current.inputDir, running);
               }
             }}
+            onPause={() => setIsPaused(true)}
+            onOpenObjectives={() => {
+              setIsPaused(true);
+              setActiveModal('MISSIONS');
+            }}
+            objectivesCount={DEFAULT_MISSIONS.filter((m) => !m.completed).length}
+            tutorialHighlight={tutorialHighlight}
           />
+
+          {/* Interactive Tutorial Overlay */}
+          {isTutorial && (
+            <TutorialOverlay
+              engine={engineRef.current}
+              currentStep={tutorialStep}
+              passengersServed={engineRef.current?.passengersServedCount || 0}
+              taxisLoaded={engineRef.current?.taxisLoadedCount || 0}
+              money={matchKz}
+              onStepChange={(nextStep) => setTutorialStep(nextStep)}
+              onOpenObjectives={() => {
+                setIsPaused(true);
+                setActiveModal('MISSIONS');
+              }}
+              onCompleteTutorial={() => {
+                endMatch(true);
+              }}
+            />
+          )}
+
+          {/* Pause Modal Overlay */}
+          {isPaused && !activeModal && (
+            <PauseModal
+              onResume={() => setIsPaused(false)}
+              onOpenObjectives={() => setActiveModal('MISSIONS')}
+              onOpenSettings={() => setActiveModal('SETTINGS')}
+              onQuitToMenu={() => {
+                setIsPaused(false);
+                if (engineRef.current) {
+                  engineRef.current.destroy();
+                  engineRef.current = null;
+                }
+                soundManager.stopBackgroundRhythm();
+                setScreen('MENU');
+              }}
+            />
+          )}
         </div>
       )}
 
@@ -226,7 +395,7 @@ export default function App() {
       {screen === 'RESULT' && matchResults && (
         <ResultScreen
           results={matchResults}
-          onPlayAgain={startMatch}
+          onPlayAgain={() => startMatch(isTutorial)}
           onContinue={() => setScreen('MENU')}
         />
       )}
@@ -269,6 +438,19 @@ export default function App() {
       {activeModal === 'SETTINGS' && (
         <SettingsModal onClose={() => setActiveModal(null)} />
       )}
+
+      {activeModal === 'GUIDE' && (
+        <HowToPlayGuide
+          onClose={() => setActiveModal(null)}
+          onStartGame={() => {
+            setActiveModal(null);
+            startMatch();
+          }}
+        />
+      )}
+
+      {/* PWA Offline / Update / Install Status Banner */}
+      <PWAStatusBanner />
     </div>
   );
 }

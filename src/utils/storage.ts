@@ -83,6 +83,7 @@ export const DEFAULT_PLAYER_STATS: PlayerStats = {
   selectedAccessory: 0,
   selectedMapId: 'PARAGEM_URBANA',
   unlockedMaps: ['PARAGEM_URBANA'],
+  tutorialCompleted: false,
 };
 
 export const DEFAULT_SETTINGS: GameSettings = {

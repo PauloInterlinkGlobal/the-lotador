@@ -198,6 +198,113 @@ class SoundEngine {
     osc2.stop(now + 0.35);
   }
 
+  // Police / Fiscal Whistle sound 👮🚨
+  public playWhistle() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    
+    // Whistle dual oscillator with rapid trill modulation
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc1.type = 'triangle';
+    osc2.type = 'sine';
+    
+    // Realistic pea whistle two-tone trill around 2.4kHz & 2.8kHz
+    osc1.frequency.setValueAtTime(2400, now);
+    osc1.frequency.linearRampToValueAtTime(2550, now + 0.08);
+    osc1.frequency.linearRampToValueAtTime(2350, now + 0.16);
+    osc1.frequency.linearRampToValueAtTime(2600, now + 0.24);
+
+    osc2.frequency.setValueAtTime(2850, now);
+    osc2.frequency.linearRampToValueAtTime(3000, now + 0.08);
+    osc2.frequency.linearRampToValueAtTime(2780, now + 0.16);
+    osc2.frequency.linearRampToValueAtTime(3050, now + 0.24);
+
+    gain.gain.setValueAtTime(0.22, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc1.start(now);
+    osc1.stop(now + 0.3);
+    osc2.start(now);
+    osc2.stop(now + 0.3);
+  }
+
+  // Stumble / Bump sound (colliding with zungueira / ambulante)
+  public playStumble() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(60, now + 0.18);
+
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.005, now + 0.18);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.18);
+  }
+
+  // Passenger Dispute Alert ("É MEU!") ⚔️
+  public playDisputeAlert() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc1.type = 'square';
+    osc2.type = 'triangle';
+    osc1.frequency.setValueAtTime(440, now);
+    osc1.frequency.setValueAtTime(554.37, now + 0.08); // C#5
+    osc2.frequency.setValueAtTime(659.25, now); // E5
+
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc1.start(now);
+    osc1.stop(now + 0.22);
+    osc2.start(now);
+    osc2.stop(now + 0.22);
+  }
+
+  // Dispute Won Fanfare! 🏆
+  public playDisputeWin() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const freqs = [587.33, 739.99, 880.00]; // D5, F#5, A5
+    freqs.forEach((f, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, now + idx * 0.06);
+      gain.gain.setValueAtTime(0.18, now + idx * 0.06);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + idx * 0.06 + 0.18);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + idx * 0.06);
+      osc.stop(now + idx * 0.06 + 0.18);
+    });
+  }
+
   // Combo Sound
   public playCombo(level: number) {
     const ctx = this.getContext();

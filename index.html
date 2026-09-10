@@ -2,14 +2,34 @@
 <html lang="pt" class="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>LOTADOR - Corre. Chama. Lota. Ganha.</title>
+    <meta name="description" content="Jogo arcade 3D de competição inspirado nos lotadores de táxi em Luanda, Angola. Corre, chama passageiros, lota os táxis e ganha Kz virtuais!" />
+    <meta property="og:title" content="LOTADOR - Corre. Chama. Lota. Ganha." />
+    <meta property="og:description" content="Jogo arcade 3D de competição inspirado nos lotadores de táxi em Luanda, Angola. Corre, chama passageiros, lota os táxis e ganha Kz virtuais!" />
+    <meta name="theme-color" content="#006399" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="/icons/icon-192x192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Anybody:ital,wght@0,800;0,900;1,800;1,900&family=Space+Grotesk:wght@600;700&family=Work+Sans:wght@500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
   </head>
   <body class="bg-[#f9f9ff] text-[#161c28] overflow-hidden select-none touch-none">
+    <script>
+      // Clear stale service workers in development mode to prevent duplicate React runtime caching
+      if (location.hostname === 'localhost' || location.hostname.includes('.run.app') || location.port === '3000') {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            for (var r of regs) { r.unregister(); }
+          });
+        }
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

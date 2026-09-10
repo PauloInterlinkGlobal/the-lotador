@@ -11,7 +11,9 @@ import {
   PassengerType, 
   TaxiType, 
   PlayerStats,
-  FloatingText 
+  FloatingText,
+  UrbanObstacle,
+  PassengerDispute
 } from '../types/game';
 import { soundManager } from '../utils/audio';
 import { spriteAtlasManager } from '../utils/spriteAtlas';
@@ -24,6 +26,11 @@ export interface GameEngineCallbacks {
   onRushHourState: (isRush: boolean) => void;
   onStaminaChange: (current: number, max: number) => void;
   onPassengerServedCount: (count: number) => void;
+  onDisputeUpdate?: (dispute: PassengerDispute | null) => void;
+  onPlayerMove?: (distanceTotal: number) => void;
+  onPassengerFollowed?: (p: Passenger) => void;
+  onPassengerBoarded?: (p: Passenger, taxi: Taxi) => void;
+  onPlayerRunStart?: () => void;
 }
 
 export class GameEngine {
@@ -43,18 +50,27 @@ export class GameEngine {
   private staminaRecoveryRate = 20;
   private staminaDrainRate = 35;
   public playerStats: PlayerStats;
+  public isTutorial = false;
+  public playerMovedDistance = 0;
+  public tutorialPassengerId: string | null = null;
   
   // Game Collections
   public passengers: Passenger[] = [];
   public taxis: Taxi[] = [];
   public npcs: NPCLotador[] = [];
+  public urbanObstacles: UrbanObstacle[] = [];
+  public activeDispute: PassengerDispute | null = null;
+  public playerStumbleTimer = 0;
   
   // Meshes
   private playerMesh!: THREE.Group;
   private playerRingMesh!: THREE.Mesh;
+  private playerDirArrowGroup!: THREE.Group;
+  private playerDirArrowMesh!: THREE.Mesh;
   private passengerMeshes: Map<string, THREE.Group> = new Map();
   private taxiMeshes: Map<string, THREE.Group> = new Map();
   private npcMeshes: Map<string, THREE.Group> = new Map();
+  private obstacleMeshes: Map<string, THREE.Group> = new Map();
 
   // Match State
   public combo = 1;
@@ -64,6 +80,7 @@ export class GameEngine {
   public taxisLoadedCount = 0;
   public passengersServedCount = 0;
   public isRushHour = false;
+  public isPaused = false;
 
   // Callbacks
   private callbacks: GameEngineCallbacks;
@@ -110,10 +127,16 @@ export class GameEngine {
     scaleEnd: number;
   }[] = [];
 
-  constructor(container: HTMLElement, playerStats: PlayerStats, callbacks: GameEngineCallbacks) {
+  constructor(
+    container: HTMLElement, 
+    playerStats: PlayerStats, 
+    callbacks: GameEngineCallbacks,
+    options?: { isTutorial?: boolean }
+  ) {
     this.container = container;
     this.playerStats = playerStats;
     this.callbacks = callbacks;
+    this.isTutorial = !!options?.isTutorial;
 
     // Apply Campaign Zone Multiplier
     const selectedZone = CAMPAIGN_ZONES.find((z) => z.id === playerStats.selectedMapId);
@@ -128,6 +151,7 @@ export class GameEngine {
     this.buildMap();
     this.initPlayer();
     this.initNPCs();
+    this.initObstacles();
     this.spawnInitialEntities();
 
     window.addEventListener('resize', this.onWindowResize);
@@ -213,6 +237,9 @@ export class GameEngine {
       mesh.renderOrder = 1000 - Math.round(mesh.position.z * 10);
     });
     this.npcMeshes.forEach((mesh) => {
+      mesh.renderOrder = 1000 - Math.round(mesh.position.z * 10);
+    });
+    this.obstacleMeshes.forEach((mesh) => {
       mesh.renderOrder = 1000 - Math.round(mesh.position.z * 10);
     });
     this.taxiMeshes.forEach((mesh) => {
@@ -417,6 +444,31 @@ export class GameEngine {
     this.playerRingMesh.position.set(0, 0.42, 0);
     this.scene.add(this.playerRingMesh);
 
+    // Directional chevron indicator (activates during movement to make world orientation obvious)
+    const arrowShape = new THREE.Shape();
+    arrowShape.moveTo(0, 0.95);
+    arrowShape.lineTo(0.24, 0.65);
+    arrowShape.lineTo(0.10, 0.70);
+    arrowShape.lineTo(0.10, 0.45);
+    arrowShape.lineTo(-0.10, 0.45);
+    arrowShape.lineTo(-0.10, 0.70);
+    arrowShape.lineTo(-0.24, 0.65);
+    arrowShape.closePath();
+
+    const arrowGeo = new THREE.ShapeGeometry(arrowShape);
+    const arrowMat = new THREE.MeshBasicMaterial({
+      color: 0xfe6b00,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0,
+    });
+    this.playerDirArrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
+    this.playerDirArrowMesh.rotation.x = -Math.PI / 2; // Flat on ground, pointing +Z
+    this.playerDirArrowGroup = new THREE.Group();
+    this.playerDirArrowGroup.position.set(0, 0.425, 0);
+    this.playerDirArrowGroup.add(this.playerDirArrowMesh);
+    this.scene.add(this.playerDirArrowGroup);
+
     // Call Voice Radius Circle (shows when pressing CHAMAR)
     const callGeo = new THREE.RingGeometry(0.1, 5.0, 32);
     const callMat = new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0 });
@@ -427,6 +479,10 @@ export class GameEngine {
   }
 
   private initNPCs() {
+    if (this.isTutorial) {
+      // In tutorial, don't spawn rival lotadores so they don't harass or steal the player's passenger
+      return;
+    }
     const npcDefs = [
       { id: 'kito', name: 'Kito', nickname: 'Relâmpago', spriteKey: 'npc_kito', color: 0xba1a1a, pants: 0x161c28, pos: new THREE.Vector3(-6, 0.6, 6) },
       { id: 'manuel', name: 'Manuel', nickname: 'Veterano', spriteKey: 'npc_manuel', color: 0x2e7d32, pants: 0x572000, pos: new THREE.Vector3(6, 0.6, 6) },
@@ -457,6 +513,77 @@ export class GameEngine {
     });
   }
 
+  private initObstacles() {
+    if (this.isTutorial) {
+      // In tutorial, disable moving obstacles so new players aren't tripped
+      return;
+    }
+    const obstacleDefs: {
+      id: string;
+      name: string;
+      type: 'ZUNGUEIRA' | 'FISCAL';
+      spriteKey: string;
+      speed: number;
+      patrol: { x: number; z: number }[];
+    }[] = [
+      {
+        id: 'zungueira_1',
+        name: 'Dona Maria (Zungueira)',
+        type: 'ZUNGUEIRA',
+        spriteKey: 'obstacle_zungueira',
+        speed: 2.2,
+        patrol: [
+          { x: -22, z: 4.8 },
+          { x: 22, z: 5.2 },
+        ],
+      },
+      {
+        id: 'zungueira_2',
+        name: 'Mamã Rosa (Ambulante)',
+        type: 'ZUNGUEIRA',
+        spriteKey: 'obstacle_zungueira',
+        speed: 2.5,
+        patrol: [
+          { x: 18, z: 7.2 },
+          { x: -18, z: 6.6 },
+        ],
+      },
+      {
+        id: 'fiscal_1',
+        name: 'Fiscal João',
+        type: 'FISCAL',
+        spriteKey: 'obstacle_fiscal',
+        speed: 3.2,
+        patrol: [
+          { x: -16, z: 1.0 },
+          { x: 16, z: 1.0 },
+        ],
+      },
+    ];
+
+    obstacleDefs.forEach((def) => {
+      const mesh = this.createStylizedCharacter(0, 0, false, def.spriteKey);
+      mesh.position.set(def.patrol[0].x, 0.6, def.patrol[0].z);
+      this.scene.add(mesh);
+      this.obstacleMeshes.set(def.id, mesh);
+
+      this.urbanObstacles.push({
+        id: def.id,
+        type: def.type,
+        name: def.name,
+        position: { x: def.patrol[0].x, y: 0.6, z: def.patrol[0].z },
+        targetPos: { x: def.patrol[1].x, z: def.patrol[1].z },
+        patrolPoints: def.patrol,
+        currentPatrolIdx: 1,
+        speed: def.speed,
+        facingLeft: false,
+        animDistance: 0,
+        whistleCooldown: 0,
+        speechTimer: 0,
+      });
+    });
+  }
+
   private createStylizedCharacter(
     shirtColor: number, 
     pantsColor: number, 
@@ -478,11 +605,28 @@ export class GameEngine {
       const worldHeight = 2.8;
       const aspect = fh > 0 ? fw / fh : 0.4;
       sprite.scale.set(worldHeight * aspect, worldHeight, 1);
+    } else if (spriteFrameName?.startsWith('obstacle_')) {
+      sprite.scale.set(1.6, 2.4, 1);
     } else {
       sprite.scale.set(1.4, 2.2, 1);
     }
     sprite.position.y = isPlayer ? 1.35 : 1.1;
     group.add(sprite);
+
+    if (isPlayer) {
+      // Subtle directional billboard indicator accent (activates during movement)
+      const indGeo = new THREE.PlaneGeometry(0.5, 0.08);
+      const indMat = new THREE.MeshBasicMaterial({
+        color: 0xfe6b00,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+      });
+      const billboardIndicator = new THREE.Mesh(indGeo, indMat);
+      billboardIndicator.name = 'playerBillboardIndicator';
+      billboardIndicator.position.set(0, 0.1, 0.05);
+      group.add(billboardIndicator);
+    }
 
     // Subtle base shadow
     const shadowGeo = new THREE.CircleGeometry(0.45, 16);
@@ -496,6 +640,19 @@ export class GameEngine {
   }
 
   private spawnInitialEntities() {
+    if (this.isTutorial) {
+      // Spawn 1 Taxi directly at slot 0 with route VIANA
+      this.spawnTaxi('VIANA');
+
+      // Spawn 1 designated tutorial passenger in front of player
+      this.spawnTutorialPassenger();
+
+      // Spawn 2 extra ambient waiting passengers
+      this.spawnPassenger();
+      this.spawnPassenger();
+      return;
+    }
+
     // Spawn initial Taxis
     this.spawnTaxi('VIANA');
     this.spawnTaxi('TALATONA');
@@ -504,6 +661,60 @@ export class GameEngine {
     for (let i = 0; i < 6; i++) {
       this.spawnPassenger();
     }
+  }
+
+  public spawnTutorialPassenger(): Passenger {
+    const id = 'tutorial_passenger';
+    this.tutorialPassengerId = id;
+    const startX = 2.0;
+    const startZ = 4.2;
+
+    const passenger: Passenger = {
+      id,
+      name: 'Passageiro de Viana',
+      type: 'NORMAL',
+      destination: 'VIANA',
+      value: 150,
+      urgency: 1,
+      patience: 300, // Very generous patience for tutorial
+      maxPatience: 300,
+      speed: 4.5,
+      state: 'WAITING',
+      position: { x: startX, y: 0.6, z: startZ },
+      targetPos: { x: startX, y: 0.6, z: startZ },
+      followedBy: null,
+      assignedTaxiId: null,
+      color: '#ffd700',
+      gender: 'M',
+      animFrame: 0,
+      animTimer: 0,
+    };
+
+    this.passengers.push(passenger);
+    const pMesh = this.createStylizedCharacter(0x006399, 0x161c28, false, 'passenger_normal');
+    pMesh.position.set(startX, 0.6, startZ);
+    this.scene.add(pMesh);
+    this.passengerMeshes.set(id, pMesh);
+    this.spawnSpriteParticle('effect_passenger_ok', passenger.position, 1.4, 2.0);
+
+    return passenger;
+  }
+
+  // 3D world position to 2D screen coordinate projection for tutorial pointers
+  public toScreenPosition(pos: { x: number; y: number; z: number }): { x: number; y: number; visible: boolean } {
+    if (!this.camera || !this.container) return { x: 0, y: 0, visible: false };
+    const v = new THREE.Vector3(pos.x, (pos.y || 0.6) + 1.2, pos.z);
+    v.project(this.camera);
+    const isBehind = v.z > 1;
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    const x = (v.x * 0.5 + 0.5) * width;
+    const y = (-v.y * 0.5 + 0.5) * height;
+    return {
+      x,
+      y,
+      visible: !isBehind && x >= 0 && x <= width && y >= 0 && y <= height,
+    };
   }
 
   public spawnTaxi(forcedRoute?: RouteType) {
@@ -660,6 +871,12 @@ export class GameEngine {
 
   // Player Trigger: Call Passengers 📢
   public triggerCallAction() {
+    // If a passenger dispute is currently active, pump persuasion minigame!
+    if (this.activeDispute && !this.activeDispute.resolved) {
+      this.pushDisputePersuasion();
+      return;
+    }
+
     this.isCalling = true;
     this.callPulseTimer = 0.3;
     soundManager.playCall();
@@ -678,12 +895,25 @@ export class GameEngine {
       if (p.state === 'WAITING' || p.state === 'SEARCHING') {
         const dist = Math.hypot(p.position.x - this.playerPos.x, p.position.z - this.playerPos.z);
         if (dist <= radius) {
-          p.state = 'FOLLOWING';
-          p.followedBy = 'PLAYER';
-          this.callbacks.onFloatingText('Acompanhando!', '#ffd700', p.position);
-          soundManager.playCoin();
-          // Visual feedback on recruit
-          this.spawnSpriteParticle('effect_passenger_ok', p.position, 1.4, 2.2);
+          // Check if an NPC is also near this passenger
+          const nearbyRival = this.npcs.find(
+            (n) =>
+              (n.targetPassengerId === p.id || n.followingPassengerId === p.id) &&
+              Math.hypot(n.position.x - p.position.x, n.position.z - p.position.z) <= 3.5
+          );
+
+          if (nearbyRival && (!this.activeDispute || this.activeDispute.resolved)) {
+            // Trigger direct dispute minigame!
+            this.startDispute(p, nearbyRival);
+          } else if (!nearbyRival) {
+            p.state = 'FOLLOWING';
+            p.followedBy = 'PLAYER';
+            this.callbacks.onFloatingText('Acompanhando!', '#ffd700', p.position);
+            soundManager.playCoin();
+            // Visual feedback on recruit
+            this.spawnSpriteParticle('effect_passenger_ok', p.position, 1.4, 2.2);
+            this.callbacks.onPassengerFollowed?.(p);
+          }
         }
       }
     });
@@ -729,6 +959,8 @@ export class GameEngine {
       if (matchingTaxi.currentPassengers >= matchingTaxi.capacity) {
         this.onTaxiFilled(matchingTaxi);
       }
+
+      this.callbacks.onPassengerBoarded?.(followingP, matchingTaxi);
     }
   }
 
@@ -767,9 +999,17 @@ export class GameEngine {
   }
 
   private animate = (timestamp: number) => {
+    if (this.isPaused) {
+      this.renderer.render(this.scene, this.camera);
+      this.animationFrameId = requestAnimationFrame(this.animate);
+      return;
+    }
+
     const delta = 0.016; // ~60fps target
 
     this.updatePlayer(delta);
+    this.updateObstacles(delta);
+    this.updateDispute(delta);
     this.updateNPCs(delta);
     this.updatePassengers(delta);
     this.updateTaxis(delta);
@@ -793,7 +1033,11 @@ export class GameEngine {
     this.callbacks.onStaminaChange(this.stamina, this.maxStamina);
 
     // Calculate desired input velocity
-    const targetSpeed = this.isRunning ? this.playerSpeed * 1.5 : this.playerSpeed;
+    let targetSpeed = this.isRunning ? this.playerSpeed * 1.5 : this.playerSpeed;
+    if (this.playerStumbleTimer > 0) {
+      this.playerStumbleTimer -= delta;
+      targetSpeed *= 0.35; // Stumbled by zungueira / crowd collision
+    }
     const isInputMoving = this.inputDir.x !== 0 || this.inputDir.z !== 0;
 
     // Camera looks toward +Z, so world +X renders on the LEFT of the screen
@@ -833,6 +1077,14 @@ export class GameEngine {
     const actualDist = Math.hypot(actualDx, actualDz);
     const isMoving = actualDist > 0.002;
 
+    this.playerMovedDistance += actualDist;
+    if (this.callbacks.onPlayerMove && isMoving) {
+      this.callbacks.onPlayerMove(this.playerMovedDistance);
+    }
+    if (this.isRunning && isMoving && this.callbacks.onPlayerRunStart) {
+      this.callbacks.onPlayerRunStart();
+    }
+
     // Direction & Facing flip with Turn Lean
     if (actualDx < -0.01) {
       if (!this.playerFacingLeft && speedScalar > 2.0) {
@@ -853,36 +1105,44 @@ export class GameEngine {
     // Decay turn tilt smoothly back to 0
     this.playerTurnTilt = THREE.MathUtils.lerp(this.playerTurnTilt, 0, 10 * delta);
 
-    // Animation State Machine for Player (CÁÇA - 4 directional sprites)
-    // Determine facing direction based on actual movement delta (screen space):
-    // +Z = Up / Forward towards background (walks away -> back sprite)
-    // -Z = Down / Backward towards road / camera (walks towards camera -> front sprite)
-    // Because the camera looks toward +Z, world -X is screen-RIGHT and
-    // world +X is screen-LEFT, so the horizontal sprite picks are swapped.
-    let direction = this.playerFacingDir || 'front';
+    // =========================================================================
+    // DIRECTION STATE MACHINE & ANTI-FLICKER HYSTERESIS
+    // =========================================================================
+    // Camera is positioned at negative Z looking along +Z:
+    // - Screen-RIGHT is world -X (actualDx < 0)
+    // - Screen-LEFT is world +X (actualDx > 0)
+    // - Screen-UP (away into depth) is world +Z (actualDz > 0) -> 'back'
+    // - Screen-DOWN (towards camera) is world -Z (actualDz < 0) -> 'front'
+    //
+    // Hysteresis deadzone: Only update direction when moving decisively (above 0.25 speed)
+    // with a 15% hysteresis bias against changing axes. When slowing down or stopped,
+    // the state machine NEVER switches direction, completely eliminating flicker!
     const absDx = Math.abs(actualDx);
     const absDz = Math.abs(actualDz);
+    const isActivelyMoving = isMoving && speedScalar > 0.25 && actualDist > 0.005;
 
-    if (isMoving) {
-      if (absDx >= absDz) {
-        // Horizontal movement dominates
-        direction = actualDx < 0 ? 'right' : 'left';
+    if (isActivelyMoving) {
+      const currentAxisIsHorizontal = this.playerFacingDir === 'left' || this.playerFacingDir === 'right';
+      const horizontalDominates = currentAxisIsHorizontal
+        ? absDx >= absDz * 0.85
+        : absDx > absDz * 1.15;
+
+      if (horizontalDominates) {
+        this.playerFacingDir = actualDx < 0 ? 'right' : 'left';
       } else {
-        // Vertical movement dominates
-        direction = actualDz > 0 ? 'back' : 'front';
+        this.playerFacingDir = actualDz > 0 ? 'back' : 'front';
       }
-      this.playerFacingDir = direction as 'front' | 'back' | 'left' | 'right';
-    } else {
-      // Keep last facing direction when stopped
-      direction = this.playerFacingDir || 'front';
     }
+
+    // Always preserve the last locked facing direction
+    const direction = this.playerFacingDir || 'front';
 
     let frameKey = `player_${direction}_idle_0`;
     let yBob = 0;
     let shadowScale = 1.0;
     let shadowOpacity = 0.3;
 
-    if (isMoving || this.isCalling) {
+    if ((isMoving && speedScalar > 0.2) || this.isCalling) {
       const isRunning = this.isRunning && isMoving;
       const strideLength = isRunning ? 0.32 : 0.48;
 
@@ -919,7 +1179,7 @@ export class GameEngine {
         this.spawnDustParticle(this.playerPos.x, 0.02, this.playerPos.z, 0.35);
       }
     } else {
-      // Idle – only idle_0 exists in the real spritesheet; gentle bob instead
+      // Neutral / Idle frame – smoothly holds the last facing direction
       this.idleBreathTimer += delta;
       frameKey = `player_${direction}_idle_0`;
       yBob = Math.sin(this.idleBreathTimer * 3) * 0.012;
@@ -933,17 +1193,17 @@ export class GameEngine {
     if (spriteObj) {
       spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
       spriteObj.material.needsUpdate = true;
-      // Frames have different aspect ratios (wide running poses vs narrow
-      // front/back poses); scale proportionally so nothing looks squashed or
-      // stretched. The run frames in player1_spritesheet.png are mirrored
-      // relative to their labels (player_right_run faces left, player_left_run
-      // faces right), so flip the side run frames horizontally to make the
-      // character face the direction it walks/runs. Idle frames are oriented
-      // correctly and are left untouched.
       const { width: fw, height: fh } = spriteAtlasManager.getFrameSize(frameKey);
       const worldHeight = 2.8;
       const aspect = fh > 0 ? fw / fh : 0.4;
-      const flipX = (direction === 'left' || direction === 'right') && frameKey.includes('_run_');
+
+      // REFACTORED FLIP LOGIC:
+      // The profile frames in player1_spritesheet.png (row 3) face LEFT in the raw sprite.
+      // - To look RIGHT on screen: flip horizontally (-sx)
+      // - To look LEFT on screen: normal orientation (+sx)
+      // - Front and Back: normal orientation (+sx)
+      // flipX depends strictly and solely on direction === 'right'
+      const flipX = direction === 'right';
       const sx = worldHeight * aspect;
       spriteObj.scale.set(flipX ? -sx : sx, worldHeight, 1);
       spriteObj.position.y = 1.35 + yBob;
@@ -953,6 +1213,32 @@ export class GameEngine {
     if (shadowMesh) {
       shadowMesh.scale.set(shadowScale, shadowScale, 1);
       (shadowMesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0.1, shadowOpacity);
+    }
+
+    // Billboard visual orientation indicator (subtle accent that aligns with facing side)
+    const billboardIndicator = this.playerMesh.children.find(
+      (c) => c.name === 'playerBillboardIndicator'
+    ) as THREE.Mesh;
+    if (billboardIndicator) {
+      const mat = billboardIndicator.material as THREE.MeshBasicMaterial;
+      const targetOp = isActivelyMoving ? 0.8 : 0;
+      mat.opacity = THREE.MathUtils.lerp(mat.opacity, targetOp, 10 * delta);
+      // Shift toward facing direction (+X is screen-left, -X is screen-right)
+      const targetX = direction === 'right' ? -0.35 : direction === 'left' ? 0.35 : 0;
+      billboardIndicator.position.x = THREE.MathUtils.lerp(billboardIndicator.position.x, targetX, 12 * delta);
+    }
+
+    // Ground directional chevron arrow indicator (shows true world movement angle)
+    if (this.playerDirArrowGroup && this.playerDirArrowMesh) {
+      this.playerDirArrowGroup.position.set(this.playerPos.x, 0.425, this.playerPos.z);
+      const arrowMat = this.playerDirArrowMesh.material as THREE.MeshBasicMaterial;
+      if (isActivelyMoving && speedScalar > 0.2) {
+        const moveAngle = Math.atan2(this.playerVel.x, this.playerVel.z);
+        this.playerDirArrowGroup.rotation.y = moveAngle;
+        arrowMat.opacity = THREE.MathUtils.lerp(arrowMat.opacity, 0.85, 12 * delta);
+      } else {
+        arrowMat.opacity = THREE.MathUtils.lerp(arrowMat.opacity, 0, 8 * delta);
+      }
     }
 
     this.playerMesh.position.copy(this.playerPos);
@@ -970,6 +1256,247 @@ export class GameEngine {
     }
   }
 
+  // Urban Obstacles of Luanda (Zungueiras & Fiscal da Paragem)
+  private updateObstacles(delta: number) {
+    const isPlayerMoving = Math.hypot(this.playerVel.x, this.playerVel.z) > 0.5;
+
+    this.urbanObstacles.forEach((obs) => {
+      const mesh = this.obstacleMeshes.get(obs.id);
+      if (!mesh) return;
+
+      // Waypoint patrol navigation
+      const target = obs.patrolPoints[obs.currentPatrolIdx];
+      const dx = target.x - obs.position.x;
+      const dz = target.z - obs.position.z;
+      const distToTarget = Math.hypot(dx, dz);
+
+      if (distToTarget < 0.6) {
+        obs.currentPatrolIdx = (obs.currentPatrolIdx + 1) % obs.patrolPoints.length;
+      } else {
+        const velX = (dx / distToTarget) * obs.speed;
+        const velZ = (dz / distToTarget) * obs.speed;
+
+        obs.position.x += velX * delta;
+        obs.position.z += velZ * delta;
+        obs.facingLeft = velX < 0;
+        obs.animDistance = (obs.animDistance || 0) + Math.hypot(velX, velZ) * delta;
+      }
+
+      // Sprite walk cycle
+      const frameIdx = Math.floor((obs.animDistance || 0) / 0.45) % 4;
+      const frameKey = `obstacle_${obs.type.toLowerCase()}_walk_${frameIdx}`;
+      const spriteObj = mesh.children.find((c) => c instanceof THREE.Sprite) as THREE.Sprite;
+      if (spriteObj) {
+        spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
+        spriteObj.material.needsUpdate = true;
+        spriteObj.scale.set(obs.facingLeft ? -1.6 : 1.6, 2.4, 1);
+        const yBob = Math.abs(Math.sin(((obs.animDistance || 0) / 0.45) * Math.PI)) * 0.05;
+        spriteObj.position.y = 1.2 + yBob;
+      }
+
+      mesh.position.set(obs.position.x, 0.6, obs.position.z);
+
+      // Decrement timers
+      if (obs.whistleCooldown && obs.whistleCooldown > 0) {
+        obs.whistleCooldown -= delta;
+      }
+      if (obs.speechTimer && obs.speechTimer > 0) {
+        obs.speechTimer -= delta;
+      }
+
+      // Proximity to Player interactions
+      const distToPlayer = Math.hypot(this.playerPos.x - obs.position.x, this.playerPos.z - obs.position.z);
+
+      if (obs.type === 'ZUNGUEIRA') {
+        // Physical collision: Stumble penalty and Angolan street vendor voice line
+        if (distToPlayer < 1.35) {
+          if (this.playerStumbleTimer <= 0) {
+            this.playerStumbleTimer = 1.25;
+            soundManager.playStumble();
+            soundManager.vibrate(90);
+
+            const zungueiraPhrases = [
+              'Eish! Cuidado com a bacia, moço!',
+              'Olha a fruta! Quase entornas a manga!',
+              'Moço, vais pagar este abacate!',
+              'Calma, aqui tem negócio!',
+            ];
+            const phrase = zungueiraPhrases[Math.floor(Math.random() * zungueiraPhrases.length)];
+            obs.speechText = phrase;
+            obs.speechTimer = 2.5;
+
+            this.callbacks.onFloatingText(`🥭 ${phrase}`, '#e65100', obs.position);
+            this.spawnSpriteParticle('effect_passenger_lost', obs.position, 1.4, 1.8);
+          }
+        }
+      } else if (obs.type === 'FISCAL') {
+        // Fiscal Warning: If player sprints/runs near him!
+        if (distToPlayer < 3.0 && this.isRunning && isPlayerMoving) {
+          if (!obs.whistleCooldown || obs.whistleCooldown <= 0) {
+            obs.whistleCooldown = 4.0;
+            soundManager.playWhistle();
+            soundManager.vibrate(120);
+
+            // Stamina drain penalty
+            this.stamina = Math.max(0, this.stamina - 25);
+            this.callbacks.onStaminaChange(this.stamina, this.maxStamina);
+
+            const fiscalPhrases = [
+              'Ei, moço! Calma na paragem!',
+              'Não corre na zona dos passageiros!',
+              'Respeita a ordem da circulação!',
+              'Muita pressa dá multa!',
+            ];
+            const phrase = fiscalPhrases[Math.floor(Math.random() * fiscalPhrases.length)];
+            obs.speechText = phrase;
+            obs.speechTimer = 3.0;
+
+            this.callbacks.onFloatingText(`👮 FISCAL: ${phrase} (-25 Stamina)`, '#ba1a1a', obs.position);
+            this.spawnSpriteParticle('effect_turbo', obs.position, 1.5, 2.0);
+          }
+        }
+      }
+    });
+  }
+
+  // Direct Passenger Dispute ("É MEU!") Minigame Logic
+  public startDispute(passenger: Passenger, npc: NPCLotador) {
+    if (this.activeDispute && !this.activeDispute.resolved) return;
+
+    const rivalPhrases = [
+      'É MEU! Já vi primeiro!',
+      'Sai da frente, novato!',
+      'Viana direto, cliente é meu!',
+      'Nem tentes, já chamei!',
+    ];
+    const speech = rivalPhrases[Math.floor(Math.random() * rivalPhrases.length)];
+
+    this.activeDispute = {
+      passengerId: passenger.id,
+      passengerName: passenger.name,
+      passengerDestination: passenger.destination,
+      npcId: npc.id,
+      npcName: npc.name,
+      npcSpeech: speech,
+      timer: 3.5,
+      maxDuration: 3.5,
+      playerProgress: 35,
+      resolved: false,
+      position: { x: passenger.position.x, y: 1.5, z: passenger.position.z },
+    };
+
+    npc.state = 'DISPUTING' as any;
+    passenger.state = 'WAITING';
+
+    soundManager.playDisputeAlert();
+    soundManager.speakPhrase('É meu!');
+
+    this.callbacks.onFloatingText(`⚔️ ${npc.name}: "${speech}"`, '#fe6b00', passenger.position);
+    this.callbacks.onDisputeUpdate?.(this.activeDispute);
+  }
+
+  public pushDisputePersuasion() {
+    if (!this.activeDispute || this.activeDispute.resolved) return;
+
+    const voiceBoost = (this.playerStats.upgradeVoice || 0) * 3.5;
+    const persuasionBoost = (this.playerStats.upgradePersuasion || 0) * 4.5;
+    const boost = 22 + voiceBoost + persuasionBoost;
+
+    this.activeDispute.playerProgress = Math.min(100, this.activeDispute.playerProgress + boost);
+
+    soundManager.playCall();
+    this.spawnSpriteParticle('effect_megaphone', this.playerPos, 1.6, 1.5);
+    this.callbacks.onFloatingText('+PERSUASÃO! 📢', '#ffd700', this.playerPos);
+
+    if (this.activeDispute.playerProgress >= 100) {
+      this.winDispute();
+    } else {
+      this.callbacks.onDisputeUpdate?.(this.activeDispute);
+    }
+  }
+
+  public winDispute() {
+    if (!this.activeDispute) return;
+
+    const dispute = this.activeDispute;
+    dispute.resolved = true;
+
+    soundManager.playDisputeWin();
+    soundManager.playCombo(3);
+
+    const passenger = this.passengers.find((p) => p.id === dispute.passengerId);
+    if (passenger) {
+      passenger.followedBy = 'PLAYER';
+      passenger.state = 'FOLLOWING';
+      this.spawnSpriteParticle('effect_passenger_ok', passenger.position, 1.8, 2.5);
+    }
+
+    const npc = this.npcs.find((n) => n.id === dispute.npcId);
+    if (npc) {
+      npc.followingPassengerId = null;
+      npc.targetPassengerId = null;
+      npc.state = 'IDLE';
+      npc.disputeCooldown = 3.5;
+    }
+
+    const bonusKz = 150;
+    const bonusXp = 50;
+    this.matchKz += bonusKz;
+    this.matchXp += bonusXp;
+
+    this.callbacks.onScoreUpdate(this.matchKz, this.matchXp, this.combo);
+    this.callbacks.onFloatingText('🏆 PERSUASÃO VENCEU! +150 Kz (+50 XP)', '#ffd700', dispute.position);
+
+    setTimeout(() => {
+      this.activeDispute = null;
+      this.callbacks.onDisputeUpdate?.(null);
+    }, 400);
+  }
+
+  public loseDispute() {
+    if (!this.activeDispute) return;
+
+    const dispute = this.activeDispute;
+    dispute.resolved = true;
+
+    soundManager.playStumble();
+
+    const passenger = this.passengers.find((p) => p.id === dispute.passengerId);
+    const npc = this.npcs.find((n) => n.id === dispute.npcId);
+
+    if (passenger && npc) {
+      passenger.followedBy = npc.id;
+      passenger.state = 'FOLLOWING';
+      npc.followingPassengerId = passenger.id;
+      npc.state = 'LEADING';
+      npc.targetPassengerId = null;
+    }
+
+    this.callbacks.onFloatingText(`❌ ${dispute.npcName} levou o passageiro!`, '#ba1a1a', dispute.position);
+
+    setTimeout(() => {
+      this.activeDispute = null;
+      this.callbacks.onDisputeUpdate?.(null);
+    }, 400);
+  }
+
+  private updateDispute(delta: number) {
+    if (!this.activeDispute || this.activeDispute.resolved) return;
+
+    const dispute = this.activeDispute;
+    dispute.timer -= delta;
+
+    const npc = this.npcs.find((n) => n.id === dispute.npcId);
+    const pullRate = npc?.specialty === 'ESTRATEGIA' ? 22 : 16;
+    dispute.playerProgress = Math.max(5, dispute.playerProgress - pullRate * delta);
+
+    if (dispute.timer <= 0) {
+      this.loseDispute();
+    } else {
+      this.callbacks.onDisputeUpdate?.(dispute);
+    }
+  }
+
   private updateNPCs(delta: number) {
     this.npcs.forEach((npc) => {
       const mesh = this.npcMeshes.get(npc.id);
@@ -978,64 +1505,80 @@ export class GameEngine {
       let targetVelX = 0;
       let targetVelZ = 0;
 
-      // AI Logic: Find nearest unserviced passenger
-      if (!npc.targetPassengerId) {
-        const target = this.passengers.find((p) => p.state === 'WAITING' || p.state === 'SEARCHING');
-        if (target) {
-          npc.targetPassengerId = target.id;
-          npc.state = 'CHASING';
-        }
-      }
-
-      if (npc.targetPassengerId) {
-        const targetP = this.passengers.find((p) => p.id === npc.targetPassengerId);
-        if (targetP && targetP.state === 'WAITING') {
-          const dx = targetP.position.x - npc.position.x;
-          const dz = targetP.position.z - npc.position.z;
-          const dist = Math.hypot(dx, dz);
-
-          if (dist > 1.0) {
-            targetVelX = (dx / dist) * npc.speed;
-            targetVelZ = (dz / dist) * npc.speed;
-          } else {
-            // Claim passenger
-            targetP.state = 'FOLLOWING';
-            targetP.followedBy = npc.id;
-            npc.followingPassengerId = targetP.id;
-            npc.targetPassengerId = null;
-            npc.state = 'LEADING';
+      // Handle dispute state and cooldown
+      if (npc.disputeCooldown && npc.disputeCooldown > 0) {
+        npc.disputeCooldown -= delta;
+        targetVelX = 0;
+        targetVelZ = 0;
+      } else if (this.activeDispute && this.activeDispute.npcId === npc.id) {
+        targetVelX = 0;
+        targetVelZ = 0;
+      } else {
+        // AI Logic: Find nearest unserviced passenger
+        if (!npc.targetPassengerId) {
+          const target = this.passengers.find((p) => p.state === 'WAITING' || p.state === 'SEARCHING');
+          if (target) {
+            npc.targetPassengerId = target.id;
+            npc.state = 'CHASING';
           }
-        } else {
-          npc.targetPassengerId = null;
-          npc.state = 'IDLE';
         }
-      }
 
-      // If leading a passenger, move towards matching taxi
-      if (npc.followingPassengerId) {
-        const p = this.passengers.find((p) => p.id === npc.followingPassengerId);
-        if (p) {
-          const matchingTaxi = this.taxis.find(
-            (t) => t.route === p.destination && t.state === 'WAITING' && t.currentPassengers < t.capacity
-          );
-          if (matchingTaxi) {
-            const dx = matchingTaxi.position.x - npc.position.x;
-            const dz = matchingTaxi.position.z - npc.position.z;
+        if (npc.targetPassengerId) {
+          const targetP = this.passengers.find((p) => p.id === npc.targetPassengerId);
+          if (targetP && targetP.state === 'WAITING') {
+            const dx = targetP.position.x - npc.position.x;
+            const dz = targetP.position.z - npc.position.z;
             const dist = Math.hypot(dx, dz);
 
-            if (dist > 2.0) {
+            if (dist > 1.0) {
               targetVelX = (dx / dist) * npc.speed;
               targetVelZ = (dz / dist) * npc.speed;
             } else {
-              // Board passenger
-              p.state = 'BOARDING';
-              p.assignedTaxiId = matchingTaxi.id;
-              matchingTaxi.currentPassengers++;
-              npc.followingPassengerId = null;
-              npc.state = 'IDLE';
+              const distToPlayer = Math.hypot(targetP.position.x - this.playerPos.x, targetP.position.z - this.playerPos.z);
+              if (distToPlayer <= 3.8 && (!this.activeDispute || this.activeDispute.resolved)) {
+                // Player is close enough to contest! Trigger Passenger Dispute!
+                this.startDispute(targetP, npc);
+              } else {
+                // Claim passenger
+                targetP.state = 'FOLLOWING';
+                targetP.followedBy = npc.id;
+                npc.followingPassengerId = targetP.id;
+                npc.targetPassengerId = null;
+                npc.state = 'LEADING';
+              }
+            }
+          } else {
+            npc.targetPassengerId = null;
+            npc.state = 'IDLE';
+          }
+        }
 
-              if (matchingTaxi.currentPassengers >= matchingTaxi.capacity) {
-                this.onTaxiFilled(matchingTaxi);
+        // If leading a passenger, move towards matching taxi
+        if (npc.followingPassengerId) {
+          const p = this.passengers.find((p) => p.id === npc.followingPassengerId);
+          if (p) {
+            const matchingTaxi = this.taxis.find(
+              (t) => t.route === p.destination && t.state === 'WAITING' && t.currentPassengers < t.capacity
+            );
+            if (matchingTaxi) {
+              const dx = matchingTaxi.position.x - npc.position.x;
+              const dz = matchingTaxi.position.z - npc.position.z;
+              const dist = Math.hypot(dx, dz);
+
+              if (dist > 2.0) {
+                targetVelX = (dx / dist) * npc.speed;
+                targetVelZ = (dz / dist) * npc.speed;
+              } else {
+                // Board passenger
+                p.state = 'BOARDING';
+                p.assignedTaxiId = matchingTaxi.id;
+                matchingTaxi.currentPassengers++;
+                npc.followingPassengerId = null;
+                npc.state = 'IDLE';
+
+                if (matchingTaxi.currentPassengers >= matchingTaxi.capacity) {
+                  this.onTaxiFilled(matchingTaxi);
+                }
               }
             }
           }

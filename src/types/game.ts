@@ -100,6 +100,39 @@ export interface NPCLotador {
   velocity?: { x: number; z: number };
   facingLeft?: boolean;
   isMoving?: boolean;
+  disputeCooldown?: number;
+}
+
+export type UrbanObstacleType = 'ZUNGUEIRA' | 'FISCAL';
+
+export interface UrbanObstacle {
+  id: string;
+  type: UrbanObstacleType;
+  name: string;
+  position: { x: number; y: number; z: number };
+  targetPos: { x: number; z: number };
+  patrolPoints: { x: number; z: number }[];
+  currentPatrolIdx: number;
+  speed: number;
+  facingLeft?: boolean;
+  animDistance?: number;
+  speechText?: string;
+  speechTimer?: number;
+  whistleCooldown?: number;
+}
+
+export interface PassengerDispute {
+  passengerId: string;
+  passengerName: string;
+  passengerDestination: RouteType;
+  npcId: string;
+  npcName: string;
+  npcSpeech: string;
+  timer: number;
+  maxDuration: number;
+  playerProgress: number; // 0 to 100
+  resolved: boolean;
+  position: { x: number; y: number; z: number };
 }
 
 export interface PlayerStats {
@@ -125,6 +158,7 @@ export interface PlayerStats {
 
   selectedMapId: string;
   unlockedMaps: string[];
+  tutorialCompleted?: boolean;
 }
 
 export interface CampaignZone {
@@ -175,6 +209,8 @@ export interface MatchResults {
   duration: number;
   completedMissions?: Mission[];
   unlockedZoneName?: string;
+  isTutorial?: boolean;
+  isVictory?: boolean;
 }
 
 export interface FloatingText {

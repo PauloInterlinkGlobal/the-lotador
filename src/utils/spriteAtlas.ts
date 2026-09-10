@@ -82,6 +82,85 @@ class SpriteAtlasManager {
     return frame ? { width: frame.width, height: frame.height } : { width: 64, height: 96 };
   }
 
+  /**
+   * Diagnostic snippet to inspect dimensions, atlas coordinates, and pixel orientation
+   * for player side-facing textures (left vs right).
+   */
+  public diagnosePlayerFrames(): Record<string, any> {
+    const frameKeys = [
+      'player_left_idle_0',
+      'player_right_idle_0',
+      'player_left_run_0',
+      'player_right_run_0',
+      'player_left_run_1',
+      'player_right_run_1',
+    ];
+
+    const results: Record<string, any> = {};
+
+    frameKeys.forEach((key) => {
+      const frameDef = ATLAS_FRAMES[key];
+      const tex = this.getTexture(key);
+      const canvas = tex.image as HTMLCanvasElement;
+      const ctx = canvas?.getContext('2d');
+      let leftAlpha = 0;
+      let rightAlpha = 0;
+
+      if (ctx && canvas && canvas.width > 0 && canvas.height > 0) {
+        try {
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const midX = Math.floor(canvas.width / 2);
+          for (let y = 0; y < canvas.height; y++) {
+            for (let x = 0; x < canvas.width; x++) {
+              const alpha = imgData.data[(y * canvas.width + x) * 4 + 3];
+              if (alpha > 30) {
+                if (x < midX) leftAlpha++;
+                else rightAlpha++;
+              }
+            }
+          }
+        } catch {
+          // Canvas might be tainted if external, but our assets are local
+        }
+      }
+
+      const inferredRawDirection = leftAlpha > rightAlpha ? 'FACES_LEFT' : rightAlpha > leftAlpha ? 'FACES_RIGHT' : 'CENTERED';
+
+      results[key] = {
+        atlasCrop: frameDef ? `${frameDef.x},${frameDef.y} ${frameDef.width}x${frameDef.height}` : 'UNDEFINED',
+        canvasSize: canvas ? `${canvas.width}x${canvas.height}` : 'NO_CANVAS',
+        leftAlphaPixels: leftAlpha,
+        rightAlphaPixels: rightAlpha,
+        inferredRawDirection,
+      };
+    });
+
+    // Check if left and right share identical atlas crops
+    const run0LeftCrop = results['player_left_run_0']?.atlasCrop;
+    const run0RightCrop = results['player_right_run_0']?.atlasCrop;
+    const areRun0CropsIdentical = run0LeftCrop === run0RightCrop;
+
+    console.log(
+      `%c[SpriteAtlasManager] Player Frame Diagnosis (Identical atlas crops: ${areRun0CropsIdentical})`,
+      'color: #fe6b00; font-weight: bold; font-size: 13px;'
+    );
+    console.table(results);
+
+    const leftInferred = results['player_left_run_0']?.inferredRawDirection;
+    const rightInferred = results['player_right_run_0']?.inferredRawDirection;
+
+    return {
+      frames: results,
+      areRun0CropsIdentical,
+      leftOrientation: leftInferred,
+      rightOrientation: rightInferred,
+      verdict:
+        leftInferred === 'FACES_LEFT' && rightInferred === 'FACES_RIGHT'
+          ? 'PERFECT: player_left faces LEFT and player_right faces RIGHT on their canvas textures. No shader flip required!'
+          : 'Check atlas crops or flip configuration.',
+    };
+  }
+
   private updateCanvasTexture(texture: THREE.CanvasTexture, frameName: string) {
     const canvas = texture.image as HTMLCanvasElement;
     if (!canvas) return;
@@ -100,17 +179,38 @@ class SpriteAtlasManager {
 
     if (sourceKey && image && this.loadedSources.has(sourceKey)) {
       // Real, verified spritesheet (currently only 'player1' / Nelo).
-      ctx.drawImage(
-        image,
-        frame.x,
-        frame.y,
-        frame.width,
-        frame.height,
-        0,
-        0,
-        canvas.width,
-        canvas.height
-      );
+      // The side-view frames in player1_spritesheet.png face LEFT.
+      // Pre-mirror 'player_right_' frames so the texture inherently faces RIGHT in 3D.
+      const isPlayerRightFrame = frameName.startsWith('player_right_');
+      if (isPlayerRightFrame) {
+        ctx.save();
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(
+          image,
+          frame.x,
+          frame.y,
+          frame.width,
+          frame.height,
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        );
+        ctx.restore();
+      } else {
+        ctx.drawImage(
+          image,
+          frame.x,
+          frame.y,
+          frame.width,
+          frame.height,
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        );
+      }
     } else if (sourceKey && !this.loadedSources.has(sourceKey)) {
       // Real image still loading — leave blank; auto re-drawn on load.
       return;
@@ -134,6 +234,10 @@ export function drawFallbackSprite(ctx: CanvasRenderingContext2D, name: string, 
 
   if (name.startsWith('player') || name.startsWith('npc') || name.startsWith('passenger')) {
     drawPersonSprite(ctx, name, w, h);
+  } else if (name.startsWith('obstacle_zungueira')) {
+    drawZungueiraSprite(ctx, name, w, h);
+  } else if (name.startsWith('obstacle_fiscal')) {
+    drawFiscalSprite(ctx, name, w, h);
   } else if (name.startsWith('taxi')) {
     drawTaxiSprite(ctx, name, w, h);
   } else if (name.startsWith('object_bus_stop')) {
@@ -265,6 +369,228 @@ function drawPersonSprite(ctx: CanvasRenderingContext2D, name: string, w: number
     ctx.roundRect(w * 0.62, h * 0.42, w * 0.22, h * 0.18, 3);
     ctx.fill();
   }
+}
+
+function drawZungueiraSprite(ctx: CanvasRenderingContext2D, name: string, w: number, h: number) {
+  let legOffset = 0;
+  if (name.includes('_walk_')) {
+    const parts = name.split('_');
+    const idx = parseInt(parts[parts.length - 1] || '0', 10);
+    const swings = [0, 6, 2, -2, -6, -2, 0, 2];
+    legOffset = swings[idx % 8] || 0;
+  }
+
+  // Soft base shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+  ctx.beginPath();
+  ctx.ellipse(w / 2, h - 4, w * 0.38, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Feet / Sandals
+  ctx.fillStyle = '#161c28';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.28 - legOffset * 0.22, h * 0.78, w * 0.18, h * 0.18, 3);
+  ctx.roundRect(w * 0.54 + legOffset * 0.22, h * 0.78, w * 0.18, h * 0.18, 3);
+  ctx.fill();
+
+  // Vibrant Capulana / Pano Africano Dress (Patterned African fabric)
+  ctx.fillStyle = '#e65100';
+  ctx.beginPath();
+  ctx.moveTo(w * 0.26, h * 0.38);
+  ctx.lineTo(w * 0.74, h * 0.38);
+  ctx.lineTo(w * 0.84, h * 0.8);
+  ctx.lineTo(w * 0.16, h * 0.8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = '#161c28';
+  ctx.stroke();
+
+  // Decorative yellow/teal bands on capulana
+  ctx.fillStyle = '#ffd700';
+  ctx.fillRect(w * 0.2, h * 0.58, w * 0.6, 5);
+  ctx.fillStyle = '#00897b';
+  ctx.fillRect(w * 0.18, h * 0.68, w * 0.64, 4);
+
+  // Blouse / Torso
+  ctx.fillStyle = '#ffb300';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.26, h * 0.34, w * 0.48, h * 0.18, 5);
+  ctx.fill();
+  ctx.strokeStyle = '#161c28';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Head & Skin
+  ctx.fillStyle = '#5d4037';
+  ctx.beginPath();
+  ctx.arc(w / 2, h * 0.26, w * 0.17, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Eyes
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(w / 2 - 3.5, h * 0.25, 2.5, 0, Math.PI * 2);
+  ctx.arc(w / 2 + 3.5, h * 0.25, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#161c28';
+  ctx.beginPath();
+  ctx.arc(w / 2 - 3.5, h * 0.25, 1.2, 0, Math.PI * 2);
+  ctx.arc(w / 2 + 3.5, h * 0.25, 1.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Turbante / Headwrap (Panos na cabeça)
+  ctx.fillStyle = '#00897b';
+  ctx.beginPath();
+  ctx.ellipse(w / 2, h * 0.19, w * 0.2, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#161c28';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // The Bacia (Metallic Basin on head) 🍉 🍌 🥭
+  ctx.fillStyle = '#90a4ae'; // Aluminum basin
+  ctx.beginPath();
+  ctx.moveTo(w * 0.08, h * 0.15);
+  ctx.lineTo(w * 0.92, h * 0.15);
+  ctx.lineTo(w * 0.78, h * 0.2);
+  ctx.lineTo(w * 0.22, h * 0.2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#161c28';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Fruits piled in the bacia!
+  // Mangoes (Orange/Yellow)
+  ctx.fillStyle = '#ff9800';
+  ctx.beginPath();
+  ctx.arc(w * 0.35, h * 0.12, 5, 0, Math.PI * 2);
+  ctx.arc(w * 0.65, h * 0.12, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Bananas (Yellow curved)
+  ctx.fillStyle = '#ffd700';
+  ctx.beginPath();
+  ctx.arc(w * 0.5, h * 0.09, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Papaya / Watermelon slice (Green & Pink)
+  ctx.fillStyle = '#43a047';
+  ctx.beginPath();
+  ctx.arc(w * 0.22, h * 0.13, 4, 0, Math.PI * 2);
+  ctx.arc(w * 0.78, h * 0.13, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawFiscalSprite(ctx: CanvasRenderingContext2D, name: string, w: number, h: number) {
+  let legOffset = 0;
+  if (name.includes('_walk_')) {
+    const parts = name.split('_');
+    const idx = parseInt(parts[parts.length - 1] || '0', 10);
+    const swings = [0, 6, 2, -2, -6, -2, 0, 2];
+    legOffset = swings[idx % 8] || 0;
+  }
+
+  // Base shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+  ctx.beginPath();
+  ctx.ellipse(w / 2, h - 4, w * 0.36, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Boots (Polished black boots)
+  ctx.fillStyle = '#161c28';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.24 - legOffset * 0.25, h * 0.72, w * 0.22, h * 0.24, 4);
+  ctx.roundRect(w * 0.54 + legOffset * 0.25, h * 0.72, w * 0.22, h * 0.24, 4);
+  ctx.fill();
+
+  // Dark Navy Trousers
+  ctx.fillStyle = '#1a237e';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.22, h * 0.58, w * 0.56, h * 0.2, 4);
+  ctx.fill();
+  ctx.strokeStyle = '#161c28';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Uniform Jacket (Navy Blue)
+  ctx.fillStyle = '#0d47a1';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.16, h * 0.32, w * 0.68, h * 0.34, 6);
+  ctx.fill();
+  ctx.strokeStyle = '#161c28';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // High-Visibility Reflector Vest (Neon Yellow/Green #c6ff00) 🦺
+  ctx.fillStyle = '#c6ff00';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.2, h * 0.34, w * 0.6, h * 0.28, 4);
+  ctx.fill();
+  ctx.strokeStyle = '#161c28';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Reflective Silver Stripes
+  ctx.fillStyle = '#eceff1';
+  ctx.fillRect(w * 0.22, h * 0.44, w * 0.56, 4);
+  ctx.fillRect(w * 0.32, h * 0.34, 5, h * 0.28);
+  ctx.fillRect(w * 0.62, h * 0.34, 5, h * 0.28);
+
+  // Inspector Whistle on red cord around neck 📢
+  ctx.strokeStyle = '#d50000';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(w * 0.42, h * 0.32);
+  ctx.lineTo(w * 0.5, h * 0.45);
+  ctx.lineTo(w * 0.58, h * 0.32);
+  ctx.stroke();
+  ctx.fillStyle = '#cfd8dc';
+  ctx.fillRect(w * 0.47, h * 0.45, 5, 7);
+
+  // Head & Skin
+  ctx.fillStyle = '#5d4037';
+  ctx.beginPath();
+  ctx.arc(w / 2, h * 0.22, w * 0.19, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#161c28';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Strict Eyes & Mustache
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(w / 2 - 4, h * 0.21, 3, 0, Math.PI * 2);
+  ctx.arc(w / 2 + 4, h * 0.21, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#161c28';
+  ctx.beginPath();
+  ctx.arc(w / 2 - 4, h * 0.21, 1.5, 0, Math.PI * 2);
+  ctx.arc(w / 2 + 4, h * 0.21, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  // Mustache
+  ctx.fillRect(w * 0.4, h * 0.27, w * 0.2, 2.5);
+
+  // Peaked Officer Cap / Boina de Fiscal
+  ctx.fillStyle = '#0d47a1';
+  ctx.beginPath();
+  ctx.roundRect(w * 0.2, h * 0.08, w * 0.6, h * 0.14, [8, 8, 2, 2]);
+  ctx.fill();
+  ctx.strokeStyle = '#161c28';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Cap Visor
+  ctx.fillStyle = '#161c28';
+  ctx.fillRect(w * 0.18, h * 0.17, w * 0.64, 4);
+
+  // Gold Badge / Emblema
+  ctx.fillStyle = '#ffd700';
+  ctx.beginPath();
+  ctx.arc(w / 2, h * 0.14, 3.5, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawTaxiSprite(ctx: CanvasRenderingContext2D, name: string, w: number, h: number) {
@@ -580,3 +906,7 @@ function drawLogo(ctx: CanvasRenderingContext2D, w: number, h: number) {
 }
 
 export const spriteAtlasManager = new SpriteAtlasManager();
+
+if (typeof window !== 'undefined') {
+  (window as any).diagnosePlayerAtlas = () => spriteAtlasManager.diagnosePlayerFrames();
+}
