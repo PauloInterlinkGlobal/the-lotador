@@ -3,6 +3,8 @@
  */
 
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import hiaceVanGlbUrl from '../assets/images/hiace_van.glb?url';
 import { 
   Passenger, 
   Taxi, 
@@ -18,6 +20,7 @@ import {
 import { soundManager } from '../utils/audio';
 import { spriteAtlasManager } from '../utils/spriteAtlas';
 import { CAMPAIGN_ZONES } from '../utils/storage';
+import { BuildingManager } from './BuildingManager';
 
 export interface GameEngineCallbacks {
   onScoreUpdate: (kz: number, xp: number, combo: number) => void;
@@ -39,6 +42,85 @@ export class GameEngine {
   private camera!: THREE.PerspectiveCamera;
   private renderer!: THREE.WebGLRenderer;
   private animationFrameId: number | null = null;
+
+  // 3D Taxi Model Cache (Toyota HiAce GLB)
+  private static cachedTaxiModel: THREE.Group | null = null;
+  private static taxiModelLoadingPromise: Promise<THREE.Group> | null = null;
+
+  /**
+   * Loads and caches the real Toyota HiAce GLB model with PBR materials,
+   * SRGB textures, shadows, and correct proportions for the LOTADOR world.
+   */
+  public static preloadTaxiModel(): Promise<THREE.Group> {
+    if (GameEngine.cachedTaxiModel) {
+      return Promise.resolve(GameEngine.cachedTaxiModel);
+    }
+    if (GameEngine.taxiModelLoadingPromise) {
+      return GameEngine.taxiModelLoadingPromise;
+    }
+
+    GameEngine.taxiModelLoadingPromise = new Promise((resolve, reject) => {
+      const loader = new GLTFLoader();
+      loader.load(
+        hiaceVanGlbUrl,
+        (gltf) => {
+          const root = gltf.scene;
+
+          // Configure shadows and ensure SRGB texture colorSpace
+          root.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              const mesh = child as THREE.Mesh;
+              mesh.castShadow = true;
+              mesh.receiveShadow = true;
+
+              if (mesh.material) {
+                const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                mats.forEach((mat) => {
+                  if ('map' in mat && mat.map) {
+                    (mat.map as THREE.Texture).colorSpace = THREE.SRGBColorSpace;
+                    (mat.map as THREE.Texture).needsUpdate = true;
+                  }
+                  if ('emissiveMap' in mat && mat.emissiveMap) {
+                    (mat.emissiveMap as THREE.Texture).colorSpace = THREE.SRGBColorSpace;
+                    (mat.emissiveMap as THREE.Texture).needsUpdate = true;
+                  }
+                });
+              }
+            }
+          });
+
+          // Raw GLB model dimensions:
+          // Width: 215.7cm, Height: 192.8cm, Length: 473.5cm.
+          // Front faces +Z, rear faces -Z. Lowest tire point is at y = 0.
+          //
+          // Scale 0.0115:
+          // - Height: 2.22 units (proportionate to player at 2.8 and passengers at 2.2)
+          // - Length: 5.44 units (fits 9-unit road slots with ~3.5 units spacing)
+          // - Width: 2.48 units (fits road lane)
+          const scale = 0.0115;
+          root.scale.set(scale, scale, scale);
+
+          // Rotate by -Math.PI / 2 (-90 deg) around Y so that:
+          // +Z (front) turns to -X (facing left, matching the road traffic direction).
+          // Right passenger sliding door faces +Z (towards sidewalk & boarding passengers).
+          root.rotation.y = -Math.PI / 2;
+
+          // Wheels rest directly on road level (y = 0)
+          root.position.set(0, 0, 0);
+
+          GameEngine.cachedTaxiModel = root;
+          resolve(root);
+        },
+        undefined,
+        (error) => {
+          console.error('Failed to load hiace_van.glb:', error);
+          reject(error);
+        }
+      );
+    });
+
+    return GameEngine.taxiModelLoadingPromise;
+  }
 
   // Player State
   public playerPos = new THREE.Vector3(0, 0.6, 2);
@@ -154,6 +236,9 @@ export class GameEngine {
     this.initObstacles();
     this.spawnInitialEntities();
 
+    // Preload real 3D Toyota HiAce model
+    GameEngine.preloadTaxiModel().catch(() => {});
+
     window.addEventListener('resize', this.onWindowResize);
     this.animate(0);
   }
@@ -268,8 +353,11 @@ export class GameEngine {
     this.container.appendChild(this.renderer.domElement);
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
     this.scene.add(ambientLight);
+
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444d66, 0.45);
+    this.scene.add(hemiLight);
 
     const dirLight = new THREE.DirectionalLight(0xfffaed, 1.2);
     dirLight.position.set(15, 25, -15);
@@ -330,26 +418,11 @@ export class GameEngine {
     curb.position.set(0, 0.21, -2.85);
     this.scene.add(curb);
 
-    // 3. Buildings & Props in Background
-    const buildingColors = [0xfe6b00, 0x006399, 0xffd700, 0xba1a1a, 0x705d00];
-    for (let x = -25; x <= 25; x += 9) {
-      const h = 6 + Math.random() * 6;
-      const bGeo = new THREE.BoxGeometry(7, h, 6);
-      const color = buildingColors[Math.abs(x) % buildingColors.length];
-      const bMat = new THREE.MeshLambertMaterial({ color });
-      const building = new THREE.Mesh(bGeo, bMat);
-      building.position.set(x, h / 2 + 0.4, 12);
-      building.castShadow = true;
-      building.receiveShadow = true;
-      this.scene.add(building);
-
-      // Roof trim
-      const roofGeo = new THREE.BoxGeometry(7.4, 0.4, 6.4);
-      const roofMat = new THREE.MeshLambertMaterial({ color: 0x161c28 });
-      const roof = new THREE.Mesh(roofGeo, roofMat);
-      roof.position.set(x, h + 0.6, 12);
-      this.scene.add(roof);
-    }
+    // 3. Buildings & Establishments in Background (Detailed Angolan Urban Architecture)
+    const buildingGroups = BuildingManager.generateCityBackground(-28, 28, 7.8, 12);
+    buildingGroups.forEach((bGroup) => {
+      this.scene.add(bGroup);
+    });
 
     // 4. Paragem Signs & Benches
     this.createParagemSign(-12, 0.4, 1);
@@ -739,14 +812,14 @@ export class GameEngine {
       remainingWaitTime: 90,
       baseReward: 120,
       state: 'ARRIVING',
-      position: { x: slot.x + 20, y: 0.6, z: slot.z }, // Starts offscreen right
+      position: { x: slot.x + 20, y: 0.0, z: slot.z }, // Starts offscreen right, wheels on road level (y=0)
       stopSlot: emptySlotIndex,
       color: '#ffd700',
     };
 
     this.taxis.push(taxi);
 
-    // Create 3D Mesh for Taxi Van
+    // Create 3D Mesh for Taxi Van (Toyota HiAce GLB with roof route sign)
     const vanMesh = this.createTaxiVanMesh(route);
     vanMesh.position.set(taxi.position.x, taxi.position.y, taxi.position.z);
     this.scene.add(vanMesh);
@@ -755,55 +828,175 @@ export class GameEngine {
     soundManager.playHorn();
   }
 
+  /**
+   * Creates the 3D Taxi Van for LOTADOR:
+   * Uses the authentic Toyota HiAce GLB model with PBR materials,
+   * Luanda Candongueiro livery (sky blue carpaint), wheels resting at ground level,
+   * and an illuminated destination sign board mounted on the roof.
+   */
   private createTaxiVanMesh(route: RouteType): THREE.Group {
     const group = new THREE.Group();
 
-    // Main Body (Blue Kandongueiro)
-    const bodyGeo = new THREE.BoxGeometry(4.2, 1.8, 2.0);
-    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x006399 });
+    // If GLB model is already cached, clone and attach immediately
+    if (GameEngine.cachedTaxiModel) {
+      this.attachHiaceModelToGroup(group, route);
+    } else {
+      // If async loading is still underway, attach as soon as resolved
+      GameEngine.preloadTaxiModel()
+        .then(() => {
+          if (group.parent) {
+            this.attachHiaceModelToGroup(group, route);
+          }
+        })
+        .catch((err) => {
+          console.warn('Fallback: procedural mesh used on model load fail', err);
+          this.attachProceduralFallback(group, route);
+        });
+    }
+
+    // Mount destination sign (VIANA / TALATONA / CENTRO) on top of the taxi
+    this.addDestinationSignToGroup(group, route);
+
+    return group;
+  }
+
+  /**
+   * Clones and attaches the cached Toyota HiAce model into the taxi group.
+   * Clones materials so carpaint is tinted with the iconic Luanda Candongueiro blue.
+   */
+  private attachHiaceModelToGroup(group: THREE.Group, route: RouteType) {
+    if (!GameEngine.cachedTaxiModel) return;
+
+    // Clean up any non-sign children
+    const toRemove: THREE.Object3D[] = [];
+    group.children.forEach((c) => {
+      if (c.name !== 'destinationSignGroup') {
+        toRemove.push(c);
+      }
+    });
+    toRemove.forEach((c) => group.remove(c));
+
+    const modelClone = GameEngine.cachedTaxiModel.clone(true);
+
+    // Clone materials so each taxi has unique shader properties
+    modelClone.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        if (mesh.material) {
+          if (Array.isArray(mesh.material)) {
+            mesh.material = mesh.material.map((m) => m.clone());
+          } else {
+            mesh.material = mesh.material.clone();
+          }
+
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          mats.forEach((mat) => {
+            // Apply authentic Luanda Candongueiro blue body paint to carpaint meshes
+            if (mat.name === 'carpaint' && 'color' in mat) {
+              const stdMat = mat as THREE.MeshStandardMaterial;
+              stdMat.color.setHex(0x006dae); // Iconic Luanda Candongueiro Blue
+              stdMat.roughness = 0.35;
+              stdMat.metalness = 0.25;
+            }
+          });
+        }
+      }
+    });
+
+    modelClone.name = 'hiaceVanModel';
+    group.add(modelClone);
+  }
+
+  /**
+   * Builds the illuminated destination sign board mounted on the taxi roof.
+   * Features the route name (VIANA / TALATONA / CENTRO) with route accent lighting.
+   */
+  private addDestinationSignToGroup(group: THREE.Group, route: RouteType) {
+    const signGroup = new THREE.Group();
+    signGroup.name = 'destinationSignGroup';
+
+    // Roof rack mount bars (sits right on the van roof at y=2.22)
+    const rackGeo = new THREE.BoxGeometry(1.6, 0.08, 0.9);
+    const rackMat = new THREE.MeshLambertMaterial({ color: 0x161c28 });
+    const rack = new THREE.Mesh(rackGeo, rackMat);
+    rack.position.set(0, 2.24, 0);
+    signGroup.add(rack);
+
+    // Destination Sign Box Body
+    const destKey =
+      route === 'VIANA'
+        ? 'destination_viana'
+        : route === 'TALATONA'
+        ? 'destination_talatona'
+        : 'destination_centro';
+    const destTex = spriteAtlasManager.getTexture(destKey);
+    const routeColor =
+      route === 'VIANA' ? 0xffd700 : route === 'TALATONA' ? 0x00d2ff : 0x00ff88;
+
+    const boxGeo = new THREE.BoxGeometry(1.65, 0.46, 0.44);
+    const boxMat = new THREE.MeshStandardMaterial({
+      color: 0x1a2230,
+      roughness: 0.3,
+      metalness: 0.3,
+    });
+    const signBox = new THREE.Mesh(boxGeo, boxMat);
+    signBox.position.set(0, 2.48, 0);
+    signGroup.add(signBox);
+
+    // Front Face decal (facing camera at -Z)
+    const faceGeo = new THREE.PlaneGeometry(1.5, 0.38);
+    const faceMat = new THREE.MeshBasicMaterial({
+      map: destTex,
+      transparent: true,
+    });
+
+    const faceCam = new THREE.Mesh(faceGeo, faceMat);
+    faceCam.position.set(0, 2.48, -0.23);
+    faceCam.rotation.y = Math.PI; // Look towards negative Z (camera)
+    signGroup.add(faceCam);
+
+    // Back Face decal (facing sidewalk at +Z)
+    const faceSidewalk = new THREE.Mesh(faceGeo, faceMat);
+    faceSidewalk.position.set(0, 2.48, 0.23);
+    signGroup.add(faceSidewalk);
+
+    // Top route accent neon glow bar
+    const glowBarGeo = new THREE.BoxGeometry(1.62, 0.05, 0.42);
+    const glowBarMat = new THREE.MeshBasicMaterial({ color: routeColor });
+    const glowBar = new THREE.Mesh(glowBarGeo, glowBarMat);
+    glowBar.position.set(0, 2.72, 0);
+    signGroup.add(glowBar);
+
+    group.add(signGroup);
+  }
+
+  /**
+   * Lightweight procedural fallback if GLB network load fails
+   */
+  private attachProceduralFallback(group: THREE.Group, route: RouteType) {
+    const bodyGeo = new THREE.BoxGeometry(4.6, 1.9, 2.2);
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x006dae });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.position.y = 1.1;
     body.castShadow = true;
     group.add(body);
 
-    // Yellow Stripe along side
-    const stripeGeo = new THREE.BoxGeometry(4.22, 0.35, 2.02);
+    const stripeGeo = new THREE.BoxGeometry(4.62, 0.35, 2.22);
     const stripeMat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
     const stripe = new THREE.Mesh(stripeGeo, stripeMat);
     stripe.position.y = 1.0;
     group.add(stripe);
 
-    // Real Taxi Side Decal from Atlas on Both Sides
-    const taxiTex = spriteAtlasManager.getTexture('taxi_normal');
-    const decalGeo = new THREE.PlaneGeometry(3.6, 1.6);
-    const decalMat = new THREE.MeshBasicMaterial({ map: taxiTex, transparent: true, alphaTest: 0.1 });
-    
-    const decalFront = new THREE.Mesh(decalGeo, decalMat);
-    decalFront.position.set(0, 1.1, 1.02);
-    group.add(decalFront);
-
-    const decalBack = new THREE.Mesh(decalGeo, decalMat);
-    decalBack.position.set(0, 1.1, -1.02);
-    decalBack.rotation.y = Math.PI;
-    group.add(decalBack);
-
-    // Destination Sign overlay
-    const destKey = route === 'VIANA' ? 'destination_viana' : route === 'TALATONA' ? 'destination_talatona' : 'destination_centro';
-    const destTex = spriteAtlasManager.getTexture(destKey);
-    const signGeo = new THREE.BoxGeometry(1.6, 0.5, 0.6);
-    const signMat = new THREE.MeshBasicMaterial({ map: destTex, transparent: true });
-    const sign = new THREE.Mesh(signGeo, signMat);
-    sign.position.set(0, 2.2, 0);
-    group.add(sign);
-
-    // Wheels
-    const wheelGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 12);
+    const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.3, 12);
     const wheelMat = new THREE.MeshLambertMaterial({ color: 0x161c28 });
     const wheelPositions = [
-      [-1.3, 0.4, 1.05],
-      [1.3, 0.4, 1.05],
-      [-1.3, 0.4, -1.05],
-      [1.3, 0.4, -1.05],
+      [-1.4, 0.38, 1.12],
+      [1.4, 0.38, 1.12],
+      [-1.4, 0.38, -1.12],
+      [1.4, 0.38, -1.12],
     ];
     wheelPositions.forEach(([wx, wy, wz]) => {
       const w = new THREE.Mesh(wheelGeo, wheelMat);
@@ -811,8 +1004,6 @@ export class GameEngine {
       w.position.set(wx, wy, wz);
       group.add(w);
     });
-
-    return group;
   }
 
   public spawnPassenger() {
@@ -978,14 +1169,16 @@ export class GameEngine {
 
     this.callbacks.onScoreUpdate(this.matchKz, this.matchXp, this.combo);
     this.callbacks.onTaxiLoaded(taxi, bonusKz, bonusXp);
-    this.callbacks.onFloatingText(`🚐 TÁXI LOTADO! +${bonusKz} Kz`, '#fe6b00', taxi.position);
+
+    const roofPos = { x: taxi.position.x, y: 2.3, z: taxi.position.z };
+    this.callbacks.onFloatingText(`🚐 TÁXI LOTADO! +${bonusKz} Kz`, '#fe6b00', roofPos);
 
     soundManager.playTaxiFull();
     soundManager.vibrate(100);
 
     // Particles on taxi filled
-    this.spawnSpriteParticle('effect_taxi_full', taxi.position, 2.6, 3.0);
-    this.spawnSpriteParticle('effect_combo', taxi.position, 2.2, 2.5);
+    this.spawnSpriteParticle('effect_taxi_full', roofPos, 2.6, 3.0);
+    this.spawnSpriteParticle('effect_combo', roofPos, 2.2, 2.5);
 
     // Free slot after departure animation
     setTimeout(() => {
