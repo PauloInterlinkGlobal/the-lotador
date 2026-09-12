@@ -1,6 +1,6 @@
 // LOTADOR Progressive Web App Service Worker
 // Offline-First & Cache-First Architecture for Mobile PWA & Capacitor Webview
-const CACHE_VERSION = 'lotador-cache-v4';
+const CACHE_VERSION = 'lotador-cache-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

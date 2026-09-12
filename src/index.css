@@ -125,3 +125,30 @@ body {
 .walk-anim {
   animation: walkCycle 0.9s ease-in-out infinite;
 }
+
+@keyframes phoneRotate {
+  0%, 15% {
+    transform: rotate(0deg);
+  }
+  50%, 75% {
+    transform: rotate(-90deg);
+  }
+  90%, 100% {
+    transform: rotate(0deg);
+  }
+}
+
+.animate-phone-rotate {
+  animation: phoneRotate 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform-origin: center;
+}
+
+@media (orientation: portrait) {
+  body {
+    overflow: hidden !important;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    touch-action: none !important;
+  }
+}

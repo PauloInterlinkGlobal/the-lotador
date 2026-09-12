@@ -129,6 +129,67 @@ export class GameEngine {
     return GameEngine.taxiModelLoadingPromise;
   }
 
+  /**
+   * Preloads all critical game assets (3D GLB model, sprite atlases, and core textures)
+   * so that everything is decoded and ready before rendering frame 0.
+   * Reports progress (0 to 100%) via onProgress callback.
+   */
+  public static async preloadAllAssets(onProgress?: (percent: number) => void): Promise<void> {
+    onProgress?.(15);
+
+    // If both assets are already loaded in memory, report 100% immediately
+    if (GameEngine.cachedTaxiModel && spriteAtlasManager.isLoaded()) {
+      onProgress?.(100);
+      return;
+    }
+
+    let loadedCount = 0;
+    const totalSteps = 2;
+
+    const stepDone = () => {
+      loadedCount++;
+      const pct = Math.min(90, Math.round(15 + (loadedCount / totalSteps) * 75));
+      onProgress?.(pct);
+    };
+
+    const modelPromise = GameEngine.preloadTaxiModel()
+      .then(() => stepDone())
+      .catch((err) => {
+        console.warn('[AssetPreloader] Warning loading HiAce 3D model:', err);
+        stepDone();
+      });
+
+    const atlasPromise = spriteAtlasManager.waitUntilLoaded()
+      .then(() => stepDone())
+      .catch((err) => {
+        console.warn('[AssetPreloader] Warning loading sprite atlas:', err);
+        stepDone();
+      });
+
+    await Promise.all([modelPromise, atlasPromise]);
+
+    // Warm up core sprite textures in memory so they are instantly ready on frame 0
+    try {
+      const coreSprites = [
+        'player_front_idle_0',
+        'player_back_idle_0',
+        'player_left_idle_0',
+        'player_right_idle_0',
+        'passenger_m1',
+        'passenger_f1',
+        'passenger_elder',
+        'passenger_student',
+        'candongueiro_full',
+        'kwanza_note'
+      ];
+      for (const k of coreSprites) {
+        spriteAtlasManager.getTexture(k);
+      }
+    } catch {}
+
+    onProgress?.(100);
+  }
+
   // Player State
   public playerPos = new THREE.Vector3(0, 0.6, 2);
   public playerRotation = 0;

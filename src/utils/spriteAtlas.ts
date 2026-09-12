@@ -29,29 +29,73 @@ class SpriteAtlasManager {
   private atlasImages: Record<string, HTMLImageElement> = {};
   private loadedSources: Set<string> = new Set();
   private textureCache: Map<string, THREE.CanvasTexture> = new Map();
+  private loadPromise: Promise<void>;
 
   constructor() {
-    this.loadImages();
+    this.loadPromise = this.loadImages();
   }
 
-  private loadImages() {
-    Object.entries(ATLAS_SOURCES).forEach(([key, src]) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = src;
-      img.onload = () => {
-        this.atlasImages[key] = img;
-        this.loadedSources.add(key);
+  private loadImages(): Promise<void> {
+    const entries = Object.entries(ATLAS_SOURCES);
+    if (entries.length === 0) return Promise.resolve();
 
-        // Re-draw any cached canvas textures that belong to this source
-        this.textureCache.forEach((texture, frameName) => {
-          const frame = ATLAS_FRAMES[frameName];
-          if (frame?.source === key) {
-            this.updateCanvasTexture(texture, frameName);
-          }
-        });
+    return new Promise<void>((resolve) => {
+      let resolvedCount = 0;
+      const total = entries.length;
+
+      const checkComplete = () => {
+        resolvedCount++;
+        if (resolvedCount >= total) {
+          resolve();
+        }
       };
+
+      entries.forEach(([key, src]) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+
+        const onFinished = () => {
+          this.atlasImages[key] = img;
+          this.loadedSources.add(key);
+
+          // Re-draw any cached canvas textures that belong to this source
+          this.textureCache.forEach((texture, frameName) => {
+            const frame = ATLAS_FRAMES[frameName];
+            if (frame?.source === key) {
+              this.updateCanvasTexture(texture, frameName);
+            }
+          });
+          checkComplete();
+        };
+
+        img.onload = onFinished;
+        img.onerror = (err) => {
+          console.warn(`[SpriteAtlas] Failed to load source image ${key}:`, err);
+          checkComplete();
+        };
+
+        img.src = src;
+
+        // If cached by browser and already complete
+        if (img.complete && img.naturalWidth > 0) {
+          onFinished();
+        }
+      });
     });
+  }
+
+  /**
+   * Returns a promise that resolves when all registered sprite atlas source images have finished loading.
+   */
+  public waitUntilLoaded(): Promise<void> {
+    return this.loadPromise;
+  }
+
+  /**
+   * Synchronously checks if all registered atlas source images have completed loading.
+   */
+  public isLoaded(): boolean {
+    return Object.keys(ATLAS_SOURCES).every((key) => this.loadedSources.has(key));
   }
 
   public getTexture(frameName: string): THREE.CanvasTexture {

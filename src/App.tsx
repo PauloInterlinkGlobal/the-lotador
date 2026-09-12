@@ -24,6 +24,8 @@ import { PWAStatusBanner } from './components/PWAStatusBanner';
 import { TutorialOverlay, TutorialStep } from './components/TutorialOverlay';
 import { useMobileLifecycle } from './hooks/useMobileLifecycle';
 import { DiagnosticOverlay } from './components/DiagnosticOverlay';
+import { LoadingScreen } from './components/LoadingScreen';
+import { RotateDeviceOverlay } from './components/RotateDeviceOverlay';
 
 type AppScreen = 'MENU' | 'GAME' | 'RESULT';
 
@@ -54,6 +56,10 @@ export default function App() {
 
   // Results State
   const [matchResults, setMatchResults] = useState<MatchResults | null>(null);
+
+  // Asset Preloader State
+  const [isLoadingMatch, setIsLoadingMatch] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
 
   // Modals
   const [activeModal, setActiveModal] = useState<
@@ -157,8 +163,23 @@ export default function App() {
     return () => clearInterval(interval);
   }, [screen]);
 
-  const startMatch = (forceTutorial = false) => {
+  const startMatch = async (forceTutorial = false) => {
     soundManager.playClick();
+
+    // Best-effort Web screen orientation lock for supported mobile browsers (e.g. Android Chrome)
+    try {
+      if (typeof window !== 'undefined' && 'ontouchstart' in window) {
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen().catch(() => {});
+        }
+        if (screen.orientation && typeof (screen.orientation as any).lock === 'function') {
+          await (screen.orientation as any).lock('landscape').catch(() => {});
+        }
+      }
+    } catch {
+      // Ignored silently as iOS Safari and desktop do not allow web orientation lock
+    }
+
     const runTutorial = forceTutorial || (!stats.tutorialCompleted && stats.level === 1);
     setIsTutorial(runTutorial);
     setTutorialStep(TutorialStep.INTRO);
@@ -171,6 +192,20 @@ export default function App() {
     setActiveDispute(null);
     setFloatingToasts([]);
     setIsPaused(false);
+
+    // Show loading overlay and preload 3D models & sprite atlases
+    setIsLoadingMatch(true);
+    setLoadingProgress(15);
+
+    try {
+      await GameEngine.preloadAllAssets((pct) => {
+        setLoadingProgress(pct);
+      });
+    } catch (err) {
+      console.warn('[startMatch] Preload completed with warning:', err);
+    }
+
+    setIsLoadingMatch(false);
     setScreen('GAME');
 
     soundManager.startBackgroundRhythm(false);
@@ -465,6 +500,9 @@ export default function App() {
         />
       )}
 
+      {/* Asset Preloader Screen */}
+      {isLoadingMatch && <LoadingScreen progress={loadingProgress} />}
+
       {/* Modals & Dialog Overlays */}
       {activeModal === 'MENTOR' && <MentorDialog onClose={() => setActiveModal(null)} />}
 
@@ -530,6 +568,9 @@ export default function App() {
         graphicsQuality={engineRef.current?.graphicsQuality || (mobileEnv.isLowEnd ? 'LOW' : 'MEDIUM')}
         lastSavedTime={storageManager.getLastSavedTime()}
       />
+
+      {/* Universal Landscape Lock Overlay for Mobile Browsers */}
+      <RotateDeviceOverlay />
     </div>
   );
 }

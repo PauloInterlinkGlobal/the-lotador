@@ -5,8 +5,8 @@
 
 import React, { useEffect, useRef } from 'react';
 import { ATLAS_FRAMES } from '../utils/atlasData';
-import spritesheetImg from '../assets/images/lotador_spritesheet_1786361082992.png';
-import cacaPlayerAtlasImg from '../assets/images/caca_player_atlas.png';
+import spritesheetImg from '../assets/images/lotador_spritesheet_1786361082992.webp';
+import player1SpritesheetImg from '../assets/images/player1_spritesheet.png';
 
 interface SpriteIconProps {
   name: string;
@@ -65,7 +65,7 @@ export const SpriteIcon: React.FC<SpriteIconProps> = ({ name, className = '', st
       name.startsWith('player_left') ||
       name.startsWith('player_right');
 
-    const src = isPlayerFrame ? cacaPlayerAtlasImg : spritesheetImg;
+    const src = isPlayerFrame ? player1SpritesheetImg : spritesheetImg;
 
     const draw = () => {
       const img = imageCache[src];

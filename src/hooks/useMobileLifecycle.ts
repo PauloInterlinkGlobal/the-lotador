@@ -20,6 +20,7 @@ export interface MobileEnvironment {
   isIOS: boolean;
   isPWA: boolean;
   isTouch: boolean;
+  isTablet: boolean;
   isLowEnd: boolean;
   isOnline: boolean;
 }
@@ -46,6 +47,13 @@ export function useMobileLifecycle(options: UseMobileLifecycleOptions = {}) {
       typeof window !== 'undefined' &&
       ('ontouchstart' in window || navigator.maxTouchPoints > 0);
 
+    // Tablet detection (iPad, Android tablets, or screens with min dimension >= 600px with touch)
+    const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : '';
+    const isTablet =
+      isTouch &&
+      (/(ipad|tablet|(android(?!.*mobile))|(windows(?!.*phone)(.*touch))|kindle|playbook|silk)/i.test(userAgent) ||
+        (typeof window !== 'undefined' && Math.min(window.screen.width, window.screen.height) >= 600));
+
     // Hardware heuristic for low-end devices: <= 4 cores or <= 3GB RAM
     const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
     const memory = typeof (navigator as any) !== 'undefined' ? (navigator as any).deviceMemory || 4 : 4;
@@ -57,6 +65,7 @@ export function useMobileLifecycle(options: UseMobileLifecycleOptions = {}) {
       isIOS,
       isPWA,
       isTouch,
+      isTablet,
       isLowEnd,
       isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
     };
@@ -145,6 +154,9 @@ export function useMobileLifecycle(options: UseMobileLifecycleOptions = {}) {
       document.removeEventListener('visibilitychange', handleVisibility);
       if (backButtonHandle) backButtonHandle.remove();
       if (appStateHandle) appStateHandle.remove();
+      if (Capacitor.isNativePlatform()) {
+        ScreenOrientation.unlock().catch(() => {});
+      }
     };
   }, [options.onBackPressed, options.onPauseGame, options.onResumeGame]);
 
