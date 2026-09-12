@@ -7,6 +7,7 @@ class SoundEngine {
   private isMuted: boolean = false;
   private isMusicMuted: boolean = false;
   private musicInterval: any = null;
+  private cachedStepBuffer: AudioBuffer | null = null;
 
   private getContext(): AudioContext | null {
     if (this.isMuted) return null;
@@ -34,20 +35,28 @@ class SoundEngine {
     }
   }
 
+  // Pre-cached or lazily computed footstep noise buffer (eliminates GC on every step)
+  private getStepBuffer(ctx: AudioContext): AudioBuffer {
+    if (this.cachedStepBuffer && this.cachedStepBuffer.sampleRate === ctx.sampleRate) {
+      return this.cachedStepBuffer;
+    }
+    const bufferSize = Math.floor(ctx.sampleRate * 0.03); // 30ms
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+    }
+    this.cachedStepBuffer = buffer;
+    return buffer;
+  }
+
   // Footstep sound synchronized with foot strikes
   public playStep(isRun: boolean = false) {
     const ctx = this.getContext();
     if (!ctx) return;
     const now = ctx.currentTime;
     
-    // Short thud / noise burst for footstep
-    const bufferSize = ctx.sampleRate * 0.03; // 30ms
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
-    }
-
+    const buffer = this.getStepBuffer(ctx);
     const noise = ctx.createBufferSource();
     noise.buffer = buffer;
 
@@ -382,6 +391,18 @@ class SoundEngine {
     if (this.musicInterval) {
       clearInterval(this.musicInterval);
       this.musicInterval = null;
+    }
+  }
+
+  public suspendAudio() {
+    if (this.ctx && this.ctx.state === 'running') {
+      this.ctx.suspend().catch(() => {});
+    }
+  }
+
+  public resumeAudio() {
+    if (this.ctx && this.ctx.state === 'suspended' && !this.isMuted) {
+      this.ctx.resume().catch(() => {});
     }
   }
 

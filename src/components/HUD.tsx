@@ -37,7 +37,7 @@ interface HUDProps {
   tutorialHighlight?: 'JOYSTICK' | 'CALL' | 'RUN' | 'MONEY' | 'ENERGY' | 'OBJECTIVES' | 'TIMER' | null;
 }
 
-export const HUD: React.FC<HUDProps> = ({
+const HUDComponent: React.FC<HUDProps> = ({
   money,
   level,
   timerSeconds,
@@ -473,3 +473,5 @@ export const HUD: React.FC<HUDProps> = ({
     </div>
   );
 };
+
+export const HUD = React.memo(HUDComponent);

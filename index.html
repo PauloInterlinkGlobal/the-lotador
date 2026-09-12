@@ -20,16 +20,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
   </head>
   <body class="bg-[#f9f9ff] text-[#161c28] overflow-hidden select-none touch-none">
-    <script>
-      // Clear stale service workers in development mode to prevent duplicate React runtime caching
-      if (location.hostname === 'localhost' || location.hostname.includes('.run.app') || location.port === '3000') {
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            for (var r of regs) { r.unregister(); }
-          });
-        }
-      }
-    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

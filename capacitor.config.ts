@@ -1,25 +1,38 @@
-export interface CapacitorConfig {
-  appId: string;
-  appName: string;
-  webDir: string;
-  bundledWebRuntime?: boolean;
-  server?: {
-    androidScheme?: string;
-    cleartext?: boolean;
-    url?: string;
-  };
-  [key: string]: any;
-}
+import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.lotador.game',
-  appName: 'LOTADOR - O Rei da Paragem',
+  appId: 'com.lotador.luandataxicraze',
+  appName: 'LOTADOR',
   webDir: 'dist',
-  bundledWebRuntime: false,
   server: {
     androidScheme: 'https',
     cleartext: false,
   },
+  plugins: {
+    StatusBar: {
+      overlaysWebView: true,
+      style: 'DARK',
+    },
+    ScreenOrientation: {
+      orientation: 'landscape',
+    },
+  },
+  android: {
+    allowMixedContent: false,
+    captureInput: true,
+    webContentsDebuggingEnabled: false,
+    backgroundColor: '#0a192f',
+    buildOptions: {
+      keystorePath: undefined,
+      keystoreAlias: undefined,
+    },
+  },
+  ios: {
+    contentInset: 'never',
+    preferredContentMode: 'mobile',
+    backgroundColor: '#0a192f',
+  },
 };
 
 export default config;
+

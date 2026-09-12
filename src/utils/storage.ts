@@ -5,6 +5,7 @@
 import { PlayerStats, Mission, GameSettings, CampaignZone } from '../types/game';
 
 const SAVE_KEY = 'LOTADOR_SAVE_V1';
+const BACKUP_SAVE_KEY = 'LOTADOR_SAVE_V1_BACKUP';
 const SETTINGS_KEY = 'LOTADOR_SETTINGS_V1';
 
 export const CAMPAIGN_ZONES: CampaignZone[] = [
@@ -86,11 +87,16 @@ export const DEFAULT_PLAYER_STATS: PlayerStats = {
   tutorialCompleted: false,
 };
 
+const isMobileOrLowEnd = typeof navigator !== 'undefined' && (
+  /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') ||
+  (typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 4)
+);
+
 export const DEFAULT_SETTINGS: GameSettings = {
   soundEnabled: true,
   musicEnabled: true,
   vibrationEnabled: true,
-  graphicsQuality: 'MEDIUM',
+  graphicsQuality: 'LOW',
   language: 'PT',
 };
 
@@ -142,22 +148,56 @@ export const DEFAULT_MISSIONS: Mission[] = [
 ];
 
 export function loadPlayerStats(): PlayerStats {
+  // 1. Try loading primary save
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
-      return { ...DEFAULT_PLAYER_STATS, ...JSON.parse(raw) };
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && typeof parsed.level === 'number') {
+        return { ...DEFAULT_PLAYER_STATS, ...parsed };
+      }
     }
   } catch (e) {
-    console.error('Error loading stats:', e);
+    console.warn('[Storage] Primary save corrupted or unavailable, attempting backup recovery:', e);
   }
+
+  // 2. Fallback to backup save
+  try {
+    const backupRaw = localStorage.getItem(BACKUP_SAVE_KEY);
+    if (backupRaw) {
+      const parsedBackup = JSON.parse(backupRaw);
+      if (parsedBackup && typeof parsedBackup === 'object' && typeof parsedBackup.level === 'number') {
+        console.log('[Storage] Successfully recovered save from backup slot!');
+        return { ...DEFAULT_PLAYER_STATS, ...parsedBackup };
+      }
+    }
+  } catch (e) {
+    console.error('[Storage] Backup save read failed:', e);
+  }
+
   return { ...DEFAULT_PLAYER_STATS };
 }
 
 export function savePlayerStats(stats: PlayerStats) {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(stats));
-  } catch (e) {
-    console.error('Error saving stats:', e);
+    const serialized = JSON.stringify(stats);
+    localStorage.setItem(SAVE_KEY, serialized);
+    // Mirror to backup
+    localStorage.setItem(BACKUP_SAVE_KEY, serialized);
+  } catch (e: any) {
+    // Handle Storage Quota Exceeded
+    if (e && (e.name === 'QuotaExceededError' || e.code === 22)) {
+      console.warn('[Storage] Quota exceeded, purging non-critical keys to preserve save...');
+      try {
+        // Remove non-essential keys
+        localStorage.removeItem('LOTADOR_DEBUG_LOG');
+        localStorage.setItem(SAVE_KEY, JSON.stringify(stats));
+      } catch (innerErr) {
+        console.error('[Storage] Critical: Unable to save game state after quota cleanup:', innerErr);
+      }
+    } else {
+      console.error('[Storage] Error saving stats:', e);
+    }
   }
 }
 

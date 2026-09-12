@@ -2,7 +2,7 @@
  * LOTADOR - Main Application Controller
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PlayerStats, MatchResults, Taxi, Passenger, PassengerDispute } from './types/game';
 import { loadPlayerStats, savePlayerStats, getXpForNextLevel, DEFAULT_MISSIONS } from './utils/storage';
 import { storageManager } from './services/storageService';
@@ -22,6 +22,8 @@ import { HowToPlayGuide } from './components/HowToPlayGuide';
 import { PauseModal } from './components/PauseModal';
 import { PWAStatusBanner } from './components/PWAStatusBanner';
 import { TutorialOverlay, TutorialStep } from './components/TutorialOverlay';
+import { useMobileLifecycle } from './hooks/useMobileLifecycle';
+import { DiagnosticOverlay } from './components/DiagnosticOverlay';
 
 type AppScreen = 'MENU' | 'GAME' | 'RESULT';
 
@@ -59,9 +61,50 @@ export default function App() {
   >(null);
   const [isPaused, setIsPaused] = useState(false);
 
-  // Request persistent storage on mount (prevents browser data eviction)
+  // Mobile Lifecycle (Capacitor background/resume, orientation, Android Back button)
+  const mobileEnv = useMobileLifecycle({
+    onPauseGame: () => {
+      if (screen === 'GAME') {
+        setIsPaused(true);
+      }
+      soundManager.suspendAudio();
+    },
+    onResumeGame: () => {
+      soundManager.resumeAudio();
+    },
+    onBackPressed: () => {
+      // 1. If modal open, close modal
+      if (activeModal !== null) {
+        setActiveModal(null);
+        return true;
+      }
+      // 2. If in game, pause or open pause modal
+      if (screen === 'GAME') {
+        if (!isPaused) {
+          setIsPaused(true);
+          return true;
+        } else {
+          setIsPaused(false);
+          return true;
+        }
+      }
+      // 3. If in result screen, return to menu
+      if (screen === 'RESULT') {
+        setScreen('MENU');
+        return true;
+      }
+      return false; // let OS minimize app
+    },
+  });
+
+  // Request persistent storage on mount (prevents browser data eviction) and hydrate from secure storage
   useEffect(() => {
     storageManager.requestPersistentStorage();
+    storageManager.loadPlayerProgress().then((loadedStats) => {
+      if (loadedStats && (loadedStats.money !== stats.money || loadedStats.level !== stats.level || loadedStats.bestScore !== stats.bestScore)) {
+        setStats(loadedStats);
+      }
+    }).catch(() => {});
   }, []);
 
   // Sync engine pause state
@@ -159,8 +202,10 @@ export default function App() {
             },
             onRushHourState: (isRush) => setIsRushHour(isRush),
             onStaminaChange: (cur, max) => {
-              setStamina(cur);
-              setMaxStamina(max);
+              const roundedCur = Math.round(cur);
+              const roundedMax = Math.round(max);
+              setStamina((prev) => (prev === roundedCur ? prev : roundedCur));
+              setMaxStamina((prev) => (prev === roundedMax ? prev : roundedMax));
             },
             onPassengerServedCount: (count) => {},
             onDisputeUpdate: (dispute) => {
@@ -296,6 +341,35 @@ export default function App() {
       : null
     : null;
 
+  const handleCallAction = useCallback(() => {
+    engineRef.current?.triggerCallAction();
+  }, []);
+
+  const handleInteractAction = useCallback(() => {
+    engineRef.current?.triggerInteractAction();
+  }, []);
+
+  const handleJoystickMove = useCallback((dir: { x: number; z: number }) => {
+    if (engineRef.current) {
+      engineRef.current.updateInputs(dir, engineRef.current.isRunning);
+    }
+  }, []);
+
+  const handleRunToggle = useCallback((running: boolean) => {
+    if (engineRef.current) {
+      engineRef.current.updateInputs(engineRef.current.inputDir, running);
+    }
+  }, []);
+
+  const handlePause = useCallback(() => {
+    setIsPaused(true);
+  }, []);
+
+  const handleOpenObjectives = useCallback(() => {
+    setIsPaused(true);
+    setActiveModal('MISSIONS');
+  }, []);
+
   return (
     <div className="relative w-full h-screen bg-[#f9f9ff] overflow-hidden select-none">
       {/* Main Menu Screen */}
@@ -333,21 +407,12 @@ export default function App() {
             taxisLoadedCount={engineRef.current?.taxisLoadedCount || 0}
             activeDispute={activeDispute}
             floatingToasts={floatingToasts}
-            onCallAction={() => engineRef.current?.triggerCallAction()}
-            onInteractAction={() => engineRef.current?.triggerInteractAction()}
-            onJoystickMove={(dir) =>
-              engineRef.current?.updateInputs(dir, engineRef.current.isRunning)
-            }
-            onRunToggle={(running) => {
-              if (engineRef.current) {
-                engineRef.current.updateInputs(engineRef.current.inputDir, running);
-              }
-            }}
-            onPause={() => setIsPaused(true)}
-            onOpenObjectives={() => {
-              setIsPaused(true);
-              setActiveModal('MISSIONS');
-            }}
+            onCallAction={handleCallAction}
+            onInteractAction={handleInteractAction}
+            onJoystickMove={handleJoystickMove}
+            onRunToggle={handleRunToggle}
+            onPause={handlePause}
+            onOpenObjectives={handleOpenObjectives}
             objectivesCount={DEFAULT_MISSIONS.filter((m) => !m.completed).length}
             tutorialHighlight={tutorialHighlight}
           />
@@ -451,6 +516,20 @@ export default function App() {
 
       {/* PWA Offline / Update / Install Status Banner */}
       <PWAStatusBanner />
+
+      {/* Dev-Only Performance & Telemetry Diagnostics */}
+      <DiagnosticOverlay
+        fps={engineRef.current?.getFps() || 60}
+        entityCount={
+          engineRef.current?.getEntitiesCount() || {
+            passengers: passengers.length,
+            taxis: taxis.length,
+            particles: 0,
+          }
+        }
+        graphicsQuality={engineRef.current?.graphicsQuality || (mobileEnv.isLowEnd ? 'LOW' : 'MEDIUM')}
+        lastSavedTime={storageManager.getLastSavedTime()}
+      />
     </div>
   );
 }

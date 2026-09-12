@@ -1,5 +1,6 @@
 // LOTADOR Progressive Web App Service Worker
-const CACHE_VERSION = 'lotador-cache-v3';
+// Offline-First & Cache-First Architecture for Mobile PWA & Capacitor Webview
+const CACHE_VERSION = 'lotador-cache-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -11,24 +12,24 @@ const STATIC_ASSETS = [
   '/icons/apple-touch-icon.png'
 ];
 
-// Install event - Cache core application shell
+// Install event - Pre-cache core application shell
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_VERSION).then((cache) => {
-      console.log('[Service Worker] Pre-caching application shell');
+      console.log('[Service Worker] Pre-caching application shell:', CACHE_VERSION);
       return cache.addAll(STATIC_ASSETS);
     }).then(() => self.skipWaiting())
   );
 });
 
-// Activate event - Cleanup ALL old cache versions and claim clients
+// Activate event - Cleanup old cache versions and claim immediate control
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_VERSION) {
-            console.log('[Service Worker] Removing old cache:', cacheName);
+            console.log('[Service Worker] Purging old cache version:', cacheName);
             return caches.delete(cacheName);
           }
         })
@@ -37,17 +38,48 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - Cache First with Network Fallback for assets in production only
+// Helper to determine if a request qualifies for Cache-First handling
+function isStaticAsset(url, request) {
+  const path = url.pathname;
+  return (
+    request.destination === 'image' ||
+    request.destination === 'audio' ||
+    request.destination === 'font' ||
+    request.destination === 'script' ||
+    request.destination === 'style' ||
+    path.endsWith('.js') ||
+    path.endsWith('.css') ||
+    path.endsWith('.glb') ||
+    path.endsWith('.gltf') ||
+    path.endsWith('.png') ||
+    path.endsWith('.webp') ||
+    path.endsWith('.jpg') ||
+    path.endsWith('.jpeg') ||
+    path.endsWith('.svg') ||
+    path.endsWith('.ico') ||
+    path.endsWith('.mp3') ||
+    path.endsWith('.ogg') ||
+    path.endsWith('.wav') ||
+    path.endsWith('.woff2') ||
+    path.endsWith('.woff') ||
+    path.endsWith('.ttf') ||
+    url.hostname.includes('fonts.googleapis.com') ||
+    url.hostname.includes('fonts.gstatic.com') ||
+    path.includes('/assets/')
+  );
+}
+
+// Fetch event - Cache-First for static assets, Network-First for navigation
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // 1. Ignore non-GET and chrome-extension / non-http requests
+  // 1. Skip non-GET and chrome-extension / non-http requests
   if (request.method !== 'GET' || !url.protocol.startsWith('http')) {
     return;
   }
 
-  // 2. DO NOT intercept or cache Vite development requests, hot updates, or source files
+  // 2. Bypass Vite dev requests during local development
   if (
     url.pathname.startsWith('/@') ||
     url.pathname.startsWith('/src/') ||
@@ -58,22 +90,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Static assets (images, audio, fonts) -> Cache First, fallback to Network
-  if (
-    request.destination === 'image' ||
-    request.destination === 'audio' ||
-    request.destination === 'font' ||
-    url.pathname.endsWith('.png') ||
-    url.pathname.endsWith('.jpg') ||
-    url.pathname.endsWith('.mp3') ||
-    url.pathname.endsWith('.ogg')
-  ) {
+  // 3. Static Assets: CACHE-FIRST strategy with background cache population
+  if (isStaticAsset(url, request)) {
     event.respondWith(
       caches.match(request).then((cachedResponse) => {
         if (cachedResponse) {
           return cachedResponse;
         }
 
+        // Not in cache, fetch from network and cache for offline play
         return fetch(request).then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             const responseClone = networkResponse.clone();
@@ -82,13 +107,16 @@ self.addEventListener('fetch', (event) => {
             });
           }
           return networkResponse;
-        }).catch(() => cachedResponse);
+        }).catch((err) => {
+          console.warn('[Service Worker] Offline asset request failed:', request.url, err);
+          return cachedResponse || Response.error();
+        });
       })
     );
     return;
   }
 
-  // 4. HTML Navigation requests -> Network First with cache fallback
+  // 4. Navigation requests: Network-First, falling back to cached index.html (Airplane Mode)
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
@@ -109,9 +137,10 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
-// Listen for messages from client (e.g. skipWaiting)
+// Client communication listener (e.g. SKIP_WAITING from usePWA)
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
 });
+

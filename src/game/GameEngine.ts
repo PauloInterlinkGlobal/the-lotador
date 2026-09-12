@@ -84,6 +84,13 @@ export class GameEngine {
                     (mat.emissiveMap as THREE.Texture).colorSpace = THREE.SRGBColorSpace;
                     (mat.emissiveMap as THREE.Texture).needsUpdate = true;
                   }
+                  // Apply authentic Luanda Candongueiro blue body paint to carpaint meshes once
+                  if (mat.name === 'carpaint' && 'color' in mat) {
+                    const stdMat = mat as THREE.MeshStandardMaterial;
+                    stdMat.color.setHex(0x006dae); // Iconic Luanda Candongueiro Blue
+                    stdMat.roughness = 0.35;
+                    stdMat.metalness = 0.25;
+                  }
                 });
               }
             }
@@ -162,7 +169,30 @@ export class GameEngine {
   public taxisLoadedCount = 0;
   public passengersServedCount = 0;
   public isRushHour = false;
-  public isPaused = false;
+  private _isPaused = false;
+
+  public get isPaused(): boolean {
+    return this._isPaused;
+  }
+
+  public set isPaused(val: boolean) {
+    if (this._isPaused === val) return;
+    this._isPaused = val;
+    if (val) {
+      if (this.animationFrameId !== null) {
+        cancelAnimationFrame(this.animationFrameId);
+        this.animationFrameId = null;
+      }
+      // Render one single frozen snapshot frame
+      if (this.renderer && this.scene && this.camera) {
+        this.renderer.render(this.scene, this.camera);
+      }
+    } else {
+      if (this.animationFrameId === null) {
+        this.animationFrameId = requestAnimationFrame(this.animate);
+      }
+    }
+  }
 
   // Callbacks
   private callbacks: GameEngineCallbacks;
@@ -199,9 +229,41 @@ export class GameEngine {
   private idleBreathTimer = 0;
   private campaignZoneMultiplier = 1.0;
 
-  // Particle System
+  // Particle System with Zero-GC Object Pooling
+  private dustGeo = new THREE.CircleGeometry(1, 8);
+  private dustMat = new THREE.MeshBasicMaterial({
+    color: 0xe8dfc8,
+    transparent: true,
+    opacity: 0.55,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  private dustMeshPool: THREE.Mesh[] = [];
+  private spriteParticlePool: THREE.Sprite[] = [];
+  private passengerMeshPool: THREE.Group[] = [];
+
+  // Performance caches & Callback throttling
+  private playerSprite: THREE.Sprite | null = null;
+  private playerShadow: THREE.Mesh | null = null;
+  private lastPlayerFrameKey: string = '';
+  private lastReportedStamina: number = 100;
+  private lastStaminaReportTime: number = 0;
+  private lastMoveReportDist: number = 0;
+  private wasRunningLastFrame: boolean = false;
+  private lastDustSpawnTime: number = 0;
+
+  // Telemetry, Performance & Auto-Quality
+  public currentFps: number = 60;
+  public graphicsQuality: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
+  private lastFrameTime: number = 0;
+  private frameCount: number = 0;
+  private fpsUpdateTime: number = 0;
+  private lowFpsStreak: number = 0;
+  private dirLight!: THREE.DirectionalLight;
+
   private particles: {
     sprite: THREE.Sprite | THREE.Mesh;
+    isDust?: boolean;
     velocity: THREE.Vector3;
     life: number;
     maxLife: number;
@@ -243,22 +305,27 @@ export class GameEngine {
     this.animate(0);
   }
 
-  // Spawns dust cloud particle at ground level
+  // Spawns dust cloud particle at ground level using object pooling
   public spawnDustParticle(x: number, y: number, z: number, scale = 0.4) {
-    const geo = new THREE.CircleGeometry(scale, 12);
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0xe8dfc8,
-      transparent: true,
-      opacity: 0.55,
-      side: THREE.DoubleSide,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.rotation.x = Math.PI / 2;
+    const now = performance.now();
+    if (now - this.lastDustSpawnTime < 75) return; // at most ~13 dust particles per sec
+    if (this.particles.length >= 25) return; // cap simultaneous active particles
+    this.lastDustSpawnTime = now;
+
+    let mesh = this.dustMeshPool.pop();
+    if (!mesh) {
+      mesh = new THREE.Mesh(this.dustGeo, this.dustMat.clone());
+      mesh.rotation.x = Math.PI / 2;
+      this.scene.add(mesh);
+    }
+    mesh.visible = true;
     mesh.position.set(x + (Math.random() - 0.5) * 0.2, y + 0.02, z + (Math.random() - 0.5) * 0.2);
-    this.scene.add(mesh);
+    mesh.scale.set(scale, scale, 1);
+    (mesh.material as THREE.MeshBasicMaterial).opacity = 0.55;
 
     this.particles.push({
-      sprite: mesh as any,
+      sprite: mesh,
+      isDust: true,
       velocity: new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.25, (Math.random() - 0.5) * 0.5),
       life: 0.35,
       maxLife: 0.35,
@@ -267,7 +334,7 @@ export class GameEngine {
     });
   }
 
-  // Spawns visual feedback sprite particle from atlas
+  // Spawns visual feedback sprite particle from atlas using object pooling
   public spawnSpriteParticle(
     frameName: string, 
     pos: THREE.Vector3 | { x: number; y: number; z: number }, 
@@ -275,15 +342,24 @@ export class GameEngine {
     velocityY = 2.2
   ) {
     const tex = spriteAtlasManager.getTexture(frameName);
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.05 });
-    const sprite = new THREE.Sprite(mat);
+    let sprite = this.spriteParticlePool.pop();
+    if (!sprite) {
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.05, depthWrite: false });
+      sprite = new THREE.Sprite(mat);
+      sprite.renderOrder = 3000;
+      this.scene.add(sprite);
+    } else {
+      sprite.material.map = tex;
+      sprite.material.needsUpdate = true;
+      sprite.visible = true;
+    }
     sprite.position.set(pos.x, (pos.y || 0.6) + 1.2, pos.z);
     sprite.scale.set(scale, scale, 1);
-    sprite.renderOrder = 3000;
-    this.scene.add(sprite);
+    (sprite.material as THREE.SpriteMaterial).opacity = 1.0;
 
     this.particles.push({
       sprite,
+      isDust: false,
       velocity: new THREE.Vector3((Math.random() - 0.5) * 1.2, velocityY, (Math.random() - 0.5) * 1.2),
       life: 1.0,
       maxLife: 1.0,
@@ -297,8 +373,17 @@ export class GameEngine {
       const p = this.particles[i];
       p.life -= delta;
       if (p.life <= 0) {
-        this.scene.remove(p.sprite);
-        this.particles.splice(i, 1);
+        p.sprite.visible = false;
+        if (p.isDust) {
+          this.dustMeshPool.push(p.sprite as THREE.Mesh);
+        } else {
+          this.spriteParticlePool.push(p.sprite as THREE.Sprite);
+        }
+        const lastIdx = this.particles.length - 1;
+        if (i !== lastIdx) {
+          this.particles[i] = this.particles[lastIdx];
+        }
+        this.particles.pop();
         continue;
       }
 
@@ -309,7 +394,7 @@ export class GameEngine {
 
       const currentScale = p.scaleStart + (p.scaleEnd - p.scaleStart) * t;
       p.sprite.scale.set(currentScale, currentScale, 1);
-      (p.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, p.life / p.maxLife);
+      (p.sprite.material as THREE.SpriteMaterial | THREE.MeshBasicMaterial).opacity = Math.max(0, (p.life / p.maxLife) * (p.isDust ? 0.55 : 1.0));
     }
   }
 
@@ -342,11 +427,40 @@ export class GameEngine {
     this.camera.position.set(0, 16, -16);
     this.camera.lookAt(0, 0.8, 2);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    // Adaptive Resolution & Quality Scaling
+    let quality: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
+    try {
+      const raw = localStorage.getItem('LOTADOR_SETTINGS_V1');
+      if (raw) {
+        const parsed = JSON.parse(raw).graphicsQuality;
+        if (parsed === 'HIGH' || parsed === 'MEDIUM' || parsed === 'LOW') {
+          quality = parsed;
+        }
+      }
+    } catch {}
+
+    // Synchronize internal graphics quality field with loaded user settings
+    this.graphicsQuality = quality;
+
+    // Antialiasing only turns on in HIGH quality to maximize framerate on mobile GPUs
+    const useAntialias = quality === 'HIGH';
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: useAntialias, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    const baseDpr = window.devicePixelRatio || 1;
+    const targetDpr = quality === 'LOW' ? 1.0 : quality === 'HIGH' ? Math.min(baseDpr, 1.75) : Math.min(baseDpr, 1.25);
+    this.renderer.setPixelRatio(targetDpr);
+
+    if (quality === 'LOW') {
+      this.renderer.shadowMap.enabled = false;
+    } else if (quality === 'MEDIUM') {
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    } else {
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
 
     // Clear container and append
     this.container.innerHTML = '';
@@ -361,21 +475,28 @@ export class GameEngine {
 
     const dirLight = new THREE.DirectionalLight(0xfffaed, 1.2);
     dirLight.position.set(15, 25, -15);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 1024;
-    dirLight.shadow.mapSize.height = 1024;
-    dirLight.shadow.camera.near = 0.5;
-    dirLight.shadow.camera.far = 100;
-    dirLight.shadow.camera.left = -25;
-    dirLight.shadow.camera.right = 25;
-    dirLight.shadow.camera.top = 25;
-    dirLight.shadow.camera.bottom = -25;
+    this.dirLight = dirLight;
+    
+    if (quality === 'LOW') {
+      dirLight.castShadow = false;
+    } else {
+      dirLight.castShadow = true;
+      const shadowRes = quality === 'HIGH' ? 1024 : 512;
+      dirLight.shadow.mapSize.width = shadowRes;
+      dirLight.shadow.mapSize.height = shadowRes;
+      dirLight.shadow.camera.near = 0.5;
+      dirLight.shadow.camera.far = 100;
+      dirLight.shadow.camera.left = -25;
+      dirLight.shadow.camera.right = 25;
+      dirLight.shadow.camera.top = 25;
+      dirLight.shadow.camera.bottom = -25;
+    }
     this.scene.add(dirLight);
   }
 
   private buildMap() {
     // 1. Main Asphalt Road
-    const roadGeo = new THREE.PlaneGeometry(60, 10);
+    const roadGeo = new THREE.PlaneGeometry(90, 10);
     const roadMat = new THREE.MeshLambertMaterial({ color: 0x353a45 });
     const road = new THREE.Mesh(roadGeo, roadMat);
     road.rotation.x = -Math.PI / 2;
@@ -384,7 +505,7 @@ export class GameEngine {
     this.scene.add(road);
 
     // Road Stripes
-    for (let x = -28; x <= 28; x += 4) {
+    for (let x = -44; x <= 44; x += 4) {
       const stripeGeo = new THREE.PlaneGeometry(2, 0.3);
       const stripeMat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
       const stripe = new THREE.Mesh(stripeGeo, stripeMat);
@@ -404,7 +525,7 @@ export class GameEngine {
     }
 
     // 2. Sidewalk (Paragem Area where passengers gather)
-    const sidewalkGeo = new THREE.BoxGeometry(60, 0.4, 16);
+    const sidewalkGeo = new THREE.BoxGeometry(90, 0.4, 18);
     const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0xe2e8f9 });
     const sidewalk = new THREE.Mesh(sidewalkGeo, sidewalkMat);
     sidewalk.position.set(0, 0.2, 5);
@@ -412,16 +533,33 @@ export class GameEngine {
     this.scene.add(sidewalk);
 
     // Curb edge yellow line
-    const curbGeo = new THREE.BoxGeometry(60, 0.42, 0.3);
+    const curbGeo = new THREE.BoxGeometry(90, 0.42, 0.3);
     const curbMat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
     const curb = new THREE.Mesh(curbGeo, curbMat);
     curb.position.set(0, 0.21, -2.85);
     this.scene.add(curb);
 
-    // 3. Buildings & Establishments in Background (Detailed Angolan Urban Architecture)
-    const buildingGroups = BuildingManager.generateCityBackground(-28, 28, 7.8, 12);
-    buildingGroups.forEach((bGroup) => {
+    // 3. Establishments & Buildings (Detailed Angolan Urban Architecture)
+    // Central Commercial Strip behind sidewalk (z = 12)
+    const backgroundBuildings = BuildingManager.generateCityBackground(-28, 28, 7.6, 12);
+    backgroundBuildings.forEach((bGroup) => {
       this.scene.add(bGroup);
+    });
+
+    // Lateral Wings & Side Streets (x < -28 and x > 28)
+    const lateralBuildings = BuildingManager.generateLateralStreets();
+    lateralBuildings.forEach((bGroup) => {
+      this.scene.add(bGroup);
+    });
+
+    // Distant City Skyline (z = 20) with residential buildings, tin roofs, and water tanks
+    const distantSkyline = BuildingManager.generateDistantSkyline();
+    this.scene.add(distantSkyline);
+
+    // Street life props: lamps, trash bins, Luanda road signs, Multicaixa ATM, market stalls
+    const urbanProps = BuildingManager.generateUrbanProps();
+    urbanProps.forEach((prop) => {
+      this.scene.add(prop);
     });
 
     // 4. Paragem Signs & Benches
@@ -508,6 +646,11 @@ export class GameEngine {
     this.playerMesh = this.createStylizedCharacter(0xffd700, 0x006399, true, 'player_front_idle_0');
     this.playerMesh.position.copy(this.playerPos);
     this.scene.add(this.playerMesh);
+
+    this.playerSprite = (this.playerMesh.userData.sprite || this.playerMesh.children.find((c) => c instanceof THREE.Sprite)) as THREE.Sprite;
+    this.playerShadow = (this.playerMesh.userData.shadow || this.playerMesh.children.find((c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.CircleGeometry)) as THREE.Mesh;
+    this.lastPlayerFrameKey = 'player_front_idle_0';
+    this.lastReportedStamina = this.stamina;
 
     // Player position ring under feet
     const ringGeo = new THREE.RingGeometry(0.6, 0.75, 16);
@@ -709,6 +852,12 @@ export class GameEngine {
     shadow.position.y = 0.01;
     group.add(shadow);
 
+    group.userData = {
+      sprite,
+      shadow,
+      currentFrameKey: frameKey,
+    };
+
     return group;
   }
 
@@ -862,7 +1011,7 @@ export class GameEngine {
 
   /**
    * Clones and attaches the cached Toyota HiAce model into the taxi group.
-   * Clones materials so carpaint is tinted with the iconic Luanda Candongueiro blue.
+   * Reuses shared geometries and materials for instant rendering without duplicate VRAM spikes.
    */
   private attachHiaceModelToGroup(group: THREE.Group, route: RouteType) {
     if (!GameEngine.cachedTaxiModel) return;
@@ -876,36 +1025,8 @@ export class GameEngine {
     });
     toRemove.forEach((c) => group.remove(c));
 
+    // Shared geometry and material clone (zero duplicate GPU buffers)
     const modelClone = GameEngine.cachedTaxiModel.clone(true);
-
-    // Clone materials so each taxi has unique shader properties
-    modelClone.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-
-        if (mesh.material) {
-          if (Array.isArray(mesh.material)) {
-            mesh.material = mesh.material.map((m) => m.clone());
-          } else {
-            mesh.material = mesh.material.clone();
-          }
-
-          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-          mats.forEach((mat) => {
-            // Apply authentic Luanda Candongueiro blue body paint to carpaint meshes
-            if (mat.name === 'carpaint' && 'color' in mat) {
-              const stdMat = mat as THREE.MeshStandardMaterial;
-              stdMat.color.setHex(0x006dae); // Iconic Luanda Candongueiro Blue
-              stdMat.roughness = 0.35;
-              stdMat.metalness = 0.25;
-            }
-          });
-        }
-      }
-    });
-
     modelClone.name = 'hiaceVanModel';
     group.add(modelClone);
   }
@@ -1049,11 +1170,21 @@ export class GameEngine {
       pType === 'ESPECIAL' ? 'passenger_especial' :
       'passenger_normal';
 
-    const shirtCol = Math.floor(Math.random() * 0xffffff);
-    const pantsCol = Math.floor(Math.random() * 0xffffff);
-    const pMesh = this.createStylizedCharacter(shirtCol, pantsCol, false, spriteFrameName);
+    // Acquire mesh from pool or create if empty
+    let pMesh = this.passengerMeshPool.pop();
+    if (!pMesh) {
+      pMesh = this.createStylizedCharacter(0xffffff, 0xffffff, false, spriteFrameName);
+      this.scene.add(pMesh);
+    } else {
+      const spriteObj = pMesh.children.find((c) => c instanceof THREE.Sprite) as THREE.Sprite;
+      if (spriteObj) {
+        spriteObj.material.map = spriteAtlasManager.getTexture(spriteFrameName);
+        spriteObj.material.needsUpdate = true;
+      }
+      pMesh.visible = true;
+    }
+
     pMesh.position.set(startX, 0.6, startZ);
-    this.scene.add(pMesh);
     this.passengerMeshes.set(id, pMesh);
 
     // Visual feedback particle on spawn ✨
@@ -1192,13 +1323,33 @@ export class GameEngine {
   }
 
   private animate = (timestamp: number) => {
-    if (this.isPaused) {
-      this.renderer.render(this.scene, this.camera);
-      this.animationFrameId = requestAnimationFrame(this.animate);
+    if (this._isPaused) {
       return;
     }
 
-    const delta = 0.016; // ~60fps target
+    if (!this.lastFrameTime) this.lastFrameTime = timestamp;
+    const rawDelta = (timestamp - this.lastFrameTime) / 1000;
+    this.lastFrameTime = timestamp;
+    // Delta clamping: prevents physics explosion if tab was minimized/backgrounded
+    const delta = Math.min(Math.max(rawDelta, 0.005), 0.05);
+
+    // FPS Telemetry & Automatic Dynamic Downgrade for Low-End Smartphones
+    this.frameCount++;
+    if (timestamp - this.fpsUpdateTime > 500) {
+      this.currentFps = (this.frameCount * 1000) / (timestamp - this.fpsUpdateTime);
+      this.frameCount = 0;
+      this.fpsUpdateTime = timestamp;
+
+      if (this.currentFps < 28) {
+        this.lowFpsStreak++;
+        if (this.lowFpsStreak >= 4 && this.graphicsQuality !== 'LOW') {
+          console.warn('[GameEngine] Low FPS detected on mobile -> Auto-downgrading graphics quality to LOW');
+          this.setGraphicsQuality('LOW');
+        }
+      } else {
+        this.lowFpsStreak = Math.max(0, this.lowFpsStreak - 1);
+      }
+    }
 
     this.updatePlayer(delta);
     this.updateObstacles(delta);
@@ -1215,6 +1366,41 @@ export class GameEngine {
     this.animationFrameId = requestAnimationFrame(this.animate);
   };
 
+  public getFps(): number {
+    return Math.round(this.currentFps);
+  }
+
+  public getEntitiesCount() {
+    return {
+      passengers: this.passengers.length,
+      taxis: this.taxis.length,
+      particles: this.particles.length,
+    };
+  }
+
+  public setGraphicsQuality(quality: 'LOW' | 'MEDIUM' | 'HIGH') {
+    this.graphicsQuality = quality;
+    if (!this.renderer) return;
+
+    const baseDpr = window.devicePixelRatio || 1;
+    const targetDpr = quality === 'LOW' ? 1.0 : quality === 'HIGH' ? Math.min(baseDpr, 1.75) : Math.min(baseDpr, 1.25);
+    this.renderer.setPixelRatio(targetDpr);
+
+    if (quality === 'LOW') {
+      this.renderer.shadowMap.enabled = false;
+      if (this.dirLight) this.dirLight.castShadow = false;
+    } else {
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = quality === 'HIGH' ? THREE.PCFSoftShadowMap : THREE.BasicShadowMap;
+      if (this.dirLight) {
+        this.dirLight.castShadow = true;
+        const res = quality === 'HIGH' ? 1024 : 512;
+        this.dirLight.shadow.mapSize.width = res;
+        this.dirLight.shadow.mapSize.height = res;
+      }
+    }
+  }
+
   private updatePlayer(delta: number) {
     // Stamina drain / recovery
     if (this.isRunning) {
@@ -1223,7 +1409,19 @@ export class GameEngine {
     } else {
       this.stamina = Math.min(this.maxStamina, this.stamina + this.staminaRecoveryRate * delta);
     }
-    this.callbacks.onStaminaChange(this.stamina, this.maxStamina);
+    
+    // Stamina throttling: Only notify React when the change is noticeable (>= 1.5) or at extremes (0 / full), capped at ~10x/sec
+    const now = performance.now();
+    const staminaDelta = Math.abs(this.stamina - this.lastReportedStamina);
+    const isExtreme = (this.stamina <= 0 && this.lastReportedStamina > 0) ||
+                      (this.stamina >= this.maxStamina && this.lastReportedStamina < this.maxStamina);
+    const timeSinceLastReport = now - this.lastStaminaReportTime;
+
+    if (isExtreme || (staminaDelta >= 1.5 && timeSinceLastReport >= 100)) {
+      this.lastReportedStamina = this.stamina;
+      this.lastStaminaReportTime = now;
+      this.callbacks.onStaminaChange(this.stamina, this.maxStamina);
+    }
 
     // Calculate desired input velocity
     let targetSpeed = this.isRunning ? this.playerSpeed * 1.5 : this.playerSpeed;
@@ -1271,12 +1469,16 @@ export class GameEngine {
     const isMoving = actualDist > 0.002;
 
     this.playerMovedDistance += actualDist;
-    if (this.callbacks.onPlayerMove && isMoving) {
-      this.callbacks.onPlayerMove(this.playerMovedDistance);
+    if (this.isTutorial && this.callbacks.onPlayerMove && isMoving) {
+      if (Math.abs(this.playerMovedDistance - this.lastMoveReportDist) >= 0.25) {
+        this.lastMoveReportDist = this.playerMovedDistance;
+        this.callbacks.onPlayerMove(this.playerMovedDistance);
+      }
     }
-    if (this.isRunning && isMoving && this.callbacks.onPlayerRunStart) {
+    if (this.isRunning && !this.wasRunningLastFrame && isMoving && this.callbacks.onPlayerRunStart) {
       this.callbacks.onPlayerRunStart();
     }
+    this.wasRunningLastFrame = this.isRunning && isMoving;
 
     // Direction & Facing flip with Turn Lean
     if (actualDx < -0.01) {
@@ -1378,14 +1580,27 @@ export class GameEngine {
       yBob = Math.sin(this.idleBreathTimer * 3) * 0.012;
     }
 
-    const spriteObj = this.playerMesh.children.find((c) => c instanceof THREE.Sprite) as THREE.Sprite;
-    const shadowMesh = this.playerMesh.children.find(
-      (c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.CircleGeometry
-    ) as THREE.Mesh;
+    if (!this.playerSprite && this.playerMesh) {
+      this.playerSprite = (this.playerMesh.userData.sprite || this.playerMesh.children.find((c) => c instanceof THREE.Sprite)) as THREE.Sprite;
+    }
+    if (!this.playerShadow && this.playerMesh) {
+      this.playerShadow = (this.playerMesh.userData.shadow || this.playerMesh.children.find(
+        (c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.CircleGeometry
+      )) as THREE.Mesh;
+    }
+
+    const spriteObj = this.playerSprite;
+    const shadowMesh = this.playerShadow;
 
     if (spriteObj) {
-      spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
-      spriteObj.material.needsUpdate = true;
+      if (this.lastPlayerFrameKey !== frameKey) {
+        const newTex = spriteAtlasManager.getTexture(frameKey);
+        if (spriteObj.material.map !== newTex) {
+          spriteObj.material.map = newTex;
+          spriteObj.material.needsUpdate = true;
+        }
+        this.lastPlayerFrameKey = frameKey;
+      }
       const { width: fw, height: fh } = spriteAtlasManager.getFrameSize(frameKey);
       const worldHeight = 2.8;
       const aspect = fh > 0 ? fw / fh : 0.4;
@@ -1478,10 +1693,16 @@ export class GameEngine {
       // Sprite walk cycle
       const frameIdx = Math.floor((obs.animDistance || 0) / 0.45) % 4;
       const frameKey = `obstacle_${obs.type.toLowerCase()}_walk_${frameIdx}`;
-      const spriteObj = mesh.children.find((c) => c instanceof THREE.Sprite) as THREE.Sprite;
+      const spriteObj = (mesh.userData.sprite || mesh.children.find((c) => c instanceof THREE.Sprite)) as THREE.Sprite;
       if (spriteObj) {
-        spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
-        spriteObj.material.needsUpdate = true;
+        if (mesh.userData.currentFrameKey !== frameKey) {
+          const newTex = spriteAtlasManager.getTexture(frameKey);
+          if (spriteObj.material.map !== newTex) {
+            spriteObj.material.map = newTex;
+            spriteObj.material.needsUpdate = true;
+          }
+          mesh.userData.currentFrameKey = frameKey;
+        }
         spriteObj.scale.set(obs.facingLeft ? -1.6 : 1.6, 2.4, 1);
         const yBob = Math.abs(Math.sin(((obs.animDistance || 0) / 0.45) * Math.PI)) * 0.05;
         spriteObj.position.y = 1.2 + yBob;
@@ -1532,6 +1753,7 @@ export class GameEngine {
 
             // Stamina drain penalty
             this.stamina = Math.max(0, this.stamina - 25);
+            this.lastReportedStamina = this.stamina;
             this.callbacks.onStaminaChange(this.stamina, this.maxStamina);
 
             const fiscalPhrases = [
@@ -1821,14 +2043,20 @@ export class GameEngine {
         frameKey = npcTypeKey;
       }
 
-      const spriteObj = mesh.children.find((c) => c instanceof THREE.Sprite) as THREE.Sprite;
-      const shadowMesh = mesh.children.find(
+      const spriteObj = (mesh.userData.sprite || mesh.children.find((c) => c instanceof THREE.Sprite)) as THREE.Sprite;
+      const shadowMesh = (mesh.userData.shadow || mesh.children.find(
         (c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.CircleGeometry
-      ) as THREE.Mesh;
+      )) as THREE.Mesh;
 
       if (spriteObj) {
-        spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
-        spriteObj.material.needsUpdate = true;
+        if (mesh.userData.currentFrameKey !== frameKey) {
+          const newTex = spriteAtlasManager.getTexture(frameKey);
+          if (spriteObj.material.map !== newTex) {
+            spriteObj.material.map = newTex;
+            spriteObj.material.needsUpdate = true;
+          }
+          mesh.userData.currentFrameKey = frameKey;
+        }
         spriteObj.scale.set(npc.facingLeft ? -1.4 : 1.4, 2.2, 1);
         spriteObj.position.y = 1.1 + yBob;
       }
@@ -1848,10 +2076,10 @@ export class GameEngine {
       const pMesh = this.passengerMeshes.get(p.id);
       if (!pMesh) continue;
 
-      const spriteObj = pMesh.children.find((c) => c instanceof THREE.Sprite) as THREE.Sprite;
-      const shadowMesh = pMesh.children.find(
+      const spriteObj = (pMesh.userData.sprite || pMesh.children.find((c) => c instanceof THREE.Sprite)) as THREE.Sprite;
+      const shadowMesh = (pMesh.userData.shadow || pMesh.children.find(
         (c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.CircleGeometry
-      ) as THREE.Mesh;
+      )) as THREE.Mesh;
 
       const pTypeKey = 
         p.type === 'APRESSADO' ? 'passenger_apressado' :
@@ -1947,8 +2175,14 @@ export class GameEngine {
       }
 
       if (spriteObj) {
-        spriteObj.material.map = spriteAtlasManager.getTexture(frameKey);
-        spriteObj.material.needsUpdate = true;
+        if (pMesh.userData.currentFrameKey !== frameKey) {
+          const newTex = spriteAtlasManager.getTexture(frameKey);
+          if (spriteObj.material.map !== newTex) {
+            spriteObj.material.map = newTex;
+            spriteObj.material.needsUpdate = true;
+          }
+          pMesh.userData.currentFrameKey = frameKey;
+        }
         spriteObj.scale.set(p.facingLeft ? -1.4 : 1.4, 2.2, 1);
         spriteObj.position.y = 1.1 + yBob;
       }
@@ -1965,7 +2199,8 @@ export class GameEngine {
   private removePassenger(p: Passenger, index: number) {
     const mesh = this.passengerMeshes.get(p.id);
     if (mesh) {
-      this.scene.remove(mesh);
+      mesh.visible = false;
+      this.passengerMeshPool.push(mesh);
       this.passengerMeshes.delete(p.id);
     }
     this.passengers.splice(index, 1);
@@ -2067,13 +2302,50 @@ export class GameEngine {
   };
 
   public destroy() {
-    if (this.animationFrameId) {
+    this._isPaused = true;
+    if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
     }
     window.removeEventListener('resize', this.onWindowResize);
     soundManager.stopBackgroundRhythm();
-    if (this.renderer && this.renderer.domElement) {
-      this.renderer.domElement.remove();
+
+    // Comprehensive WebGL and Three.js Memory Cleanup
+    if (this.scene) {
+      this.scene.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const mesh = obj as THREE.Mesh;
+          // Do not dispose geometries of global cached templates
+          if (mesh.geometry && mesh.name !== 'hiaceVanModel') {
+            mesh.geometry.dispose();
+          }
+          if (mesh.material) {
+            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            mats.forEach((m) => {
+              // Note: Never dispose m.map here, as it belongs to shared SpriteAtlasManager or HiAce cache!
+              m.dispose();
+            });
+          }
+        }
+      });
+    }
+
+    // Clean up pools
+    this.dustMeshPool.length = 0;
+    this.spriteParticlePool.length = 0;
+    this.passengerMeshPool.length = 0;
+    this.particles.length = 0;
+    this.passengerMeshes.clear();
+    this.taxiMeshes.clear();
+    this.npcMeshes.clear();
+    this.obstacleMeshes.clear();
+
+    if (this.renderer) {
+      this.renderer.dispose();
+      if (this.renderer.domElement && this.renderer.domElement.parentNode) {
+        this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+      }
+      this.renderer.forceContextLoss();
     }
   }
 }
