@@ -218,7 +218,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             className="bg-white hover:bg-slate-50 text-[#161c28] font-space font-bold py-2.5 rounded-xl sticker-border hard-shadow btn-press flex items-center justify-center gap-2 cursor-pointer"
           >
             <span className="material-symbols-outlined text-[#006399] text-lg">map</span>
-            <span className="text-xs">MAPAS</span>
+            <span className="text-xs">FASES & MAPAS</span>
           </button>
 
           <button

@@ -12,6 +12,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Passenger, Taxi, PassengerDispute, OffScreenTaxiIndicator } from '../types/game';
 import { GameEngine } from '../game/GameEngine';
+import { LevelObjective } from '../types/levelObjectives';
+import { InGameObjectivesHUD } from './InGameObjectivesHUD';
 import { SpriteIcon } from './SpriteIcon';
 
 interface HUDProps {
@@ -28,6 +30,7 @@ interface HUDProps {
   activeDispute?: PassengerDispute | null;
   floatingToasts?: { id: number; text: string; color: string }[];
   engine?: GameEngine | null;
+  levelObjectives?: LevelObjective[];
   onCallAction: () => void;
   onInteractAction: () => void;
   onJoystickMove: (dir: { x: number; z: number }) => void;
@@ -53,6 +56,7 @@ const HUDComponent: React.FC<HUDProps> = ({
   activeDispute,
   floatingToasts,
   engine,
+  levelObjectives,
   onCallAction,
   onInteractAction,
   onJoystickMove,
@@ -295,6 +299,13 @@ const HUDComponent: React.FC<HUDProps> = ({
             </span>
           </button>
         </div>
+
+        {/* Top-Center Objectives HUD (Displays up to 4 active objectives in real-time) */}
+        {levelObjectives && levelObjectives.length > 0 && (
+          <div className="flex-1 flex justify-center px-1 md:px-2 pointer-events-auto">
+            <InGameObjectivesHUD objectives={levelObjectives} />
+          </div>
+        )}
 
         {/* Top-Right Group: [💰 0 Kz | ⏱ 2:56] and [Ⅱ] */}
         <div className="flex items-center gap-[clamp(6px,1.0vw,10px)]">

@@ -16,6 +16,8 @@ import { MentorDialog } from './components/MentorDialog';
 import { UpgradesModal } from './components/UpgradesModal';
 import { CharacterModal } from './components/CharacterModal';
 import { MapSelectModal } from './components/MapSelectModal';
+import { LevelSelectionScreen } from './components/LevelSelectionScreen';
+import { LevelData, LevelObjective, SAMPLE_LEVELS_DATA } from './types/levelObjectives';
 import { MissionsModal } from './components/MissionsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { HowToPlayGuide } from './components/HowToPlayGuide';
@@ -53,6 +55,12 @@ export default function App() {
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [activeDispute, setActiveDispute] = useState<PassengerDispute | null>(null);
   const [floatingToasts, setFloatingToasts] = useState<{ id: number; text: string; color: string }[]>([]);
+
+  // Active Level & In-Game Objectives
+  const [activeLevel, setActiveLevel] = useState<LevelData>(SAMPLE_LEVELS_DATA[0]);
+  const [matchObjectives, setMatchObjectives] = useState<LevelObjective[]>(
+    SAMPLE_LEVELS_DATA[0].objectives
+  );
 
   // Results State
   const [matchResults, setMatchResults] = useState<MatchResults | null>(null);
@@ -174,7 +182,14 @@ export default function App() {
     setMatchKz(0);
     setMatchXp(0);
     setMatchCombo(1);
-    setTimerSeconds(180);
+    setTimerSeconds(activeLevel.time_limit_seconds || 180);
+    setMatchObjectives(
+      activeLevel.objectives.map((o) => ({
+        ...o,
+        current_value: 0,
+        completed: false,
+      }))
+    );
     setIsRushHour(false);
     setActiveDispute(null);
     setFloatingToasts([]);
@@ -208,12 +223,34 @@ export default function App() {
               setMatchKz(kz);
               setMatchXp(xp);
               setMatchCombo(combo);
+              setMatchObjectives((prev) =>
+                prev.map((obj) =>
+                  obj.type === 'MONEY_EARNED'
+                    ? {
+                        ...obj,
+                        current_value: kz,
+                        completed: kz >= obj.target_value,
+                      }
+                    : obj
+                )
+              );
             },
             onTaxiLoaded: (taxi, reward, xp) => {
               // Check for rush hour condition
               if (engineRef.current && engineRef.current.taxisLoadedCount >= 5 && !engineRef.current.isRushHour) {
                 engineRef.current.toggleRushHour(true);
               }
+              setMatchObjectives((prev) =>
+                prev.map((obj) =>
+                  obj.type === 'FULL_CAPACITY_TRIPS'
+                    ? {
+                        ...obj,
+                        current_value: obj.current_value + 1,
+                        completed: obj.current_value + 1 >= obj.target_value,
+                      }
+                    : obj
+                )
+              );
             },
             onFloatingText: (text, color, pos) => {
               const id = Date.now() + Math.random();
@@ -254,6 +291,17 @@ export default function App() {
               }
             },
             onPassengerBoarded: () => {
+              setMatchObjectives((prev) =>
+                prev.map((obj) =>
+                  obj.type === 'PASSENGERS_DELIVERED'
+                    ? {
+                        ...obj,
+                        current_value: obj.current_value + 1,
+                        completed: obj.current_value + 1 >= obj.target_value,
+                      }
+                    : obj
+                )
+              );
               if (runTutorial) {
                 setTutorialStep((prev) => {
                   if (prev === TutorialStep.BOARD_TAXI) {
@@ -433,6 +481,7 @@ export default function App() {
             activeDispute={activeDispute}
             floatingToasts={floatingToasts}
             engine={engineRef.current}
+            levelObjectives={matchObjectives}
             onCallAction={handleCallAction}
             onInteractAction={handleInteractAction}
             onJoystickMove={handleJoystickMove}
@@ -514,11 +563,16 @@ export default function App() {
       )}
 
       {activeModal === 'MAPS' && (
-        <MapSelectModal
-          stats={stats}
-          onUpdateStats={(newStats) => setStats(newStats)}
-          onClose={() => setActiveModal(null)}
-        />
+        <div className="absolute inset-0 z-50">
+          <LevelSelectionScreen
+            onSelectAndPlayLevel={(lvl) => {
+              setActiveLevel(lvl);
+              setActiveModal(null);
+              startMatch(false);
+            }}
+            onClose={() => setActiveModal(null)}
+          />
+        </div>
       )}
 
       {activeModal === 'MISSIONS' && (
