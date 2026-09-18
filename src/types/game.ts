@@ -229,3 +229,14 @@ export interface GameSettings {
   graphicsQuality: 'LOW' | 'MEDIUM' | 'HIGH';
   language: 'PT' | 'EN';
 }
+
+export interface OffScreenTaxiIndicator {
+  id: string;
+  route: RouteType;
+  side: 'LEFT' | 'RIGHT';
+  distanceMeters: number;
+  availableSeats: number;
+  capacity: number;
+  isDestinationMatching: boolean;
+  color: string;
+}

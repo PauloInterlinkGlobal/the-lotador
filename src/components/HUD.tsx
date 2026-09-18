@@ -10,7 +10,8 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Passenger, Taxi, PassengerDispute } from '../types/game';
+import { Passenger, Taxi, PassengerDispute, OffScreenTaxiIndicator } from '../types/game';
+import { GameEngine } from '../game/GameEngine';
 import { SpriteIcon } from './SpriteIcon';
 
 interface HUDProps {
@@ -26,6 +27,7 @@ interface HUDProps {
   taxisLoadedCount?: number;
   activeDispute?: PassengerDispute | null;
   floatingToasts?: { id: number; text: string; color: string }[];
+  engine?: GameEngine | null;
   onCallAction: () => void;
   onInteractAction: () => void;
   onJoystickMove: (dir: { x: number; z: number }) => void;
@@ -50,6 +52,7 @@ const HUDComponent: React.FC<HUDProps> = ({
   taxisLoadedCount = 0,
   activeDispute,
   floatingToasts,
+  engine,
   onCallAction,
   onInteractAction,
   onJoystickMove,
@@ -60,10 +63,39 @@ const HUDComponent: React.FC<HUDProps> = ({
   objectivesCount = 3,
   tutorialHighlight = null,
 }) => {
-  const [joystickActive, setJoystickActive] = useState(false);
-  const [joystickPos, setJoystickPos] = useState({ x: 0, y: 0 });
-  const joystickRef = useRef<HTMLDivElement>(null);
+  // Dynamic Floating Joystick State
+  const [isTouchActive, setIsTouchActive] = useState(false);
+  const [touchOrigin, setTouchOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [joystickOffset, setJoystickOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const touchIdRef = useRef<number | null>(null);
+  const isMouseDownRef = useRef(false);
+
+  // Edge Indicators & Contextual Action State
+  const [edgeIndicators, setEdgeIndicators] = useState<OffScreenTaxiIndicator[]>([]);
+  const [canBoard, setCanBoard] = useState(false);
+
+  // Periodic polling for edge indicators and contextual boarding proximity
+  useEffect(() => {
+    let animId: number;
+    let lastCheck = 0;
+
+    const check = (now: number) => {
+      if (now - lastCheck > 120) {
+        lastCheck = now;
+        if (engine) {
+          setEdgeIndicators(engine.getOffScreenTaxiIndicators());
+          setCanBoard(engine.canBoardAnyTaxi().canBoard);
+        } else {
+          setEdgeIndicators([]);
+          setCanBoard(false);
+        }
+      }
+      animId = requestAnimationFrame(check);
+    };
+
+    animId = requestAnimationFrame(check);
+    return () => cancelAnimationFrame(animId);
+  }, [engine]);
 
   // Format timer MM:SS
   const mins = Math.floor(timerSeconds / 60);
@@ -122,41 +154,12 @@ const HUDComponent: React.FC<HUDProps> = ({
     };
   }, [onJoystickMove, onRunToggle, onCallAction, onInteractAction, onPause]);
 
-  // Touch Joystick Handlers
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    touchIdRef.current = touch.identifier;
-    setJoystickActive(true);
-    updateJoystickPos(touch.clientX, touch.clientY);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!joystickActive) return;
-    for (let i = 0; i < e.touches.length; i++) {
-      if (e.touches[i].identifier === touchIdRef.current) {
-        updateJoystickPos(e.touches[i].clientX, e.touches[i].clientY);
-        break;
-      }
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setJoystickActive(false);
-    setJoystickPos({ x: 0, y: 0 });
-    touchIdRef.current = null;
-    onJoystickMove({ x: 0, z: 0 });
-  };
-
-  const updateJoystickPos = (clientX: number, clientY: number) => {
-    if (!joystickRef.current) return;
-    const rect = joystickRef.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-
-    const dx = clientX - centerX;
-    const dy = clientY - centerY;
+  // Dynamic Floating Joystick Calculation
+  const processJoystickDelta = (clientX: number, clientY: number, originX: number, originY: number) => {
+    const dx = clientX - originX;
+    const dy = clientY - originY;
     const dist = Math.hypot(dx, dy);
-    const maxRadius = rect.width / 2;
+    const maxRadius = 45; // Ergonomic thumb distance
 
     const clampedDist = Math.min(dist, maxRadius);
     const angle = Math.atan2(dy, dx);
@@ -164,11 +167,67 @@ const HUDComponent: React.FC<HUDProps> = ({
     const nx = Math.cos(angle) * clampedDist;
     const ny = Math.sin(angle) * clampedDist;
 
-    setJoystickPos({ x: nx, y: ny });
+    setJoystickOffset({ x: nx, y: ny });
 
     const normX = nx / maxRadius;
     const normZ = -ny / maxRadius;
     onJoystickMove({ x: normX, z: normZ });
+  };
+
+  const handleTouchZoneStart = (e: React.TouchEvent) => {
+    if (touchIdRef.current !== null) return;
+    const touch = e.changedTouches[0];
+    touchIdRef.current = touch.identifier;
+    setTouchOrigin({ x: touch.clientX, y: touch.clientY });
+    setJoystickOffset({ x: 0, y: 0 });
+    setIsTouchActive(true);
+  };
+
+  const handleTouchZoneMove = (e: React.TouchEvent) => {
+    if (!isTouchActive || !touchOrigin || touchIdRef.current === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const touch = e.changedTouches[i];
+      if (touch.identifier === touchIdRef.current) {
+        processJoystickDelta(touch.clientX, touch.clientY, touchOrigin.x, touchOrigin.y);
+        break;
+      }
+    }
+  };
+
+  const handleTouchZoneEnd = (e: React.TouchEvent) => {
+    if (touchIdRef.current === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === touchIdRef.current) {
+        setIsTouchActive(false);
+        setTouchOrigin(null);
+        setJoystickOffset({ x: 0, y: 0 });
+        touchIdRef.current = null;
+        onJoystickMove({ x: 0, z: 0 });
+        break;
+      }
+    }
+  };
+
+  // Mouse drag support for desktop testing
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isMouseDownRef.current = true;
+    setTouchOrigin({ x: e.clientX, y: e.clientY });
+    setJoystickOffset({ x: 0, y: 0 });
+    setIsTouchActive(true);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isMouseDownRef.current || !touchOrigin) return;
+    processJoystickDelta(e.clientX, e.clientY, touchOrigin.x, touchOrigin.y);
+  };
+
+  const handleMouseUp = () => {
+    if (!isMouseDownRef.current) return;
+    isMouseDownRef.current = false;
+    setIsTouchActive(false);
+    setTouchOrigin(null);
+    setJoystickOffset({ x: 0, y: 0 });
+    onJoystickMove({ x: 0, z: 0 });
   };
 
   const staminaPercent = Math.max(0, Math.min(100, (stamina / maxStamina) * 100));
@@ -385,27 +444,146 @@ const HUDComponent: React.FC<HUDProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          BOTTOM ROW:
-          [Left: Joystick]  |  [Right: Stacked CHAMAR & CORRER]
+          EDGE SCREEN TAXI INDICATORS (Left & Right Margins)
+          Directs players immediately towards off-screen taxis with open vacancies!
           ───────────────────────────────────────────────────────────── */}
-      <footer className="flex justify-between items-end w-full pointer-events-auto pb-[clamp(1px,0.5vh,4px)]">
-        {/* 10. Joystick (Bottom-Left, 10% - 13% width, capped on ultra-wide aspect ratios) */}
-        <div className="flex flex-col items-start">
-          <div
-            ref={joystickRef}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            className={`w-[clamp(76px,11.5vw,110px)] h-[clamp(76px,11.5vw,110px)] max-w-[28vh] max-h-[28vh] rounded-full bg-slate-950/25 backdrop-blur-xs border-2 border-[#ffd700]/75 flex items-center justify-center relative touch-none shadow-md transition-all ${
-              tutorialHighlight === 'JOYSTICK' ? 'ring-4 ring-[#ffd700] ring-offset-2 ring-offset-black animate-pulse scale-105' : ''
-            }`}
-            title="Manípulo Direcional (Toque ou WASD)"
-          >
+      {/* Left Edge Indicators */}
+      <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 pointer-events-auto z-25">
+        {edgeIndicators
+          .filter((ind) => ind.side === 'LEFT')
+          .map((ind) => (
+            <div
+              key={ind.id}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border-2 border-[#161c28] shadow-md transition-all ${
+                ind.isDestinationMatching
+                  ? 'bg-[#fe6b00] text-white ring-2 ring-[#ffd700] animate-pulse scale-105 shadow-orange-500/50'
+                  : 'bg-[#161c28]/90 text-white backdrop-blur-xs'
+              }`}
+            >
+              <span className="text-xs font-black animate-bounce text-[#ffd700]">◀</span>
+              <div className="flex flex-col">
+                <div className="flex items-center gap-1">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full border border-black/40 inline-block"
+                    style={{ backgroundColor: ind.color }}
+                  />
+                  <span className="text-[10px] font-anybody font-black uppercase tracking-wider">
+                    {ind.route}
+                  </span>
+                  {ind.isDestinationMatching && (
+                    <span className="text-[8px] font-space font-black bg-[#ffd700] text-[#161c28] px-1 rounded-sm uppercase ml-0.5">
+                      VAGA!
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 text-[9px] font-space text-slate-200">
+                  <span className="font-bold text-[#ffd700]">{ind.distanceMeters}m</span>
+                  <span>•</span>
+                  <span>{ind.availableSeats} vag{ind.availableSeats === 1 ? 'a' : 'as'}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+      </div>
+
+      {/* Right Edge Indicators */}
+      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 pointer-events-auto z-25">
+        {edgeIndicators
+          .filter((ind) => ind.side === 'RIGHT')
+          .map((ind) => (
+            <div
+              key={ind.id}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border-2 border-[#161c28] shadow-md transition-all ${
+                ind.isDestinationMatching
+                  ? 'bg-[#fe6b00] text-white ring-2 ring-[#ffd700] animate-pulse scale-105 shadow-orange-500/50'
+                  : 'bg-[#161c28]/90 text-white backdrop-blur-xs'
+              }`}
+            >
+              <div className="flex flex-col text-right">
+                <div className="flex items-center justify-end gap-1">
+                  {ind.isDestinationMatching && (
+                    <span className="text-[8px] font-space font-black bg-[#ffd700] text-[#161c28] px-1 rounded-sm uppercase mr-0.5">
+                      VAGA!
+                    </span>
+                  )}
+                  <span className="text-[10px] font-anybody font-black uppercase tracking-wider">
+                    {ind.route}
+                  </span>
+                  <span
+                    className="w-2.5 h-2.5 rounded-full border border-black/40 inline-block"
+                    style={{ backgroundColor: ind.color }}
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-1 text-[9px] font-space text-slate-200">
+                  <span>{ind.availableSeats} vag{ind.availableSeats === 1 ? 'a' : 'as'}</span>
+                  <span>•</span>
+                  <span className="font-bold text-[#ffd700]">{ind.distanceMeters}m</span>
+                </div>
+              </div>
+              <span className="text-xs font-black animate-bounce text-[#ffd700]">▶</span>
+            </div>
+          ))}
+      </div>
+
+      {/* Dynamic Floating Touch Zone (Captures touch on bottom-left 48% of screen) */}
+      <div
+        onTouchStart={handleTouchZoneStart}
+        onTouchMove={handleTouchZoneMove}
+        onTouchEnd={handleTouchZoneEnd}
+        onTouchCancel={handleTouchZoneEnd}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        className="absolute bottom-0 left-0 w-[48vw] max-w-[420px] h-[55vh] z-20 touch-none pointer-events-auto"
+        title="Área do Joystick Tátil Dinâmico"
+      />
+
+      {/* Dynamic Floating Joystick Base (Rendered exactly where thumb touched) */}
+      {isTouchActive && touchOrigin && (
+        <div
+          className="fixed pointer-events-none z-30 flex items-center justify-center transition-opacity duration-75"
+          style={{
+            left: `${touchOrigin.x}px`,
+            top: `${touchOrigin.y}px`,
+            transform: 'translate(-50%, -50%)',
+          }}
+        >
+          <div className="w-[96px] h-[96px] rounded-full bg-slate-950/40 backdrop-blur-xs border-2 border-[#ffd700] flex items-center justify-center relative shadow-xl">
+            {/* Inner Ring */}
+            <div className="w-[60px] h-[60px] rounded-full border border-dashed border-[#ffd700]/50 absolute" />
             {/* Knob */}
             <div
-              className="w-[clamp(30px,4.5vw,42px)] h-[clamp(30px,4.5vw,42px)] max-w-[11vh] max-h-[11vh] bg-[#ffd700] rounded-full border-2 border-[#161c28] absolute top-1/2 left-1/2 flex items-center justify-center shadow-md transition-transform pointer-events-none"
+              className="w-[42px] h-[42px] bg-[#ffd700] rounded-full border-2 border-[#161c28] absolute flex items-center justify-center shadow-lg"
               style={{
-                transform: `translate(calc(-50% + ${joystickPos.x}px), calc(-50% + ${joystickPos.y}px))`,
+                transform: `translate(${joystickOffset.x}px, ${joystickOffset.y}px)`,
+              }}
+            >
+              <div className="w-3 h-3 bg-[#161c28]/80 rounded-full" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          BOTTOM ROW:
+          [Left: Joystick Rest Position]  |  [Right: Stacked LOTAR/CHAMAR & CORRER]
+          ───────────────────────────────────────────────────────────── */}
+      <footer className="flex justify-between items-end w-full pointer-events-auto pb-[clamp(1px,0.5vh,4px)]">
+        {/* Joystick Rest Base (Visible in bottom-left when idle, guides the player's thumb) */}
+        <div className="flex flex-col items-start select-none">
+          <div
+            className={`w-[clamp(76px,11.5vw,104px)] h-[clamp(76px,11.5vw,104px)] max-w-[26vh] max-h-[26vh] rounded-full bg-slate-950/25 backdrop-blur-xs border-2 border-[#ffd700]/75 flex items-center justify-center relative touch-none shadow-md transition-all ${
+              isTouchActive ? 'opacity-30' : 'opacity-75'
+            } ${
+              tutorialHighlight === 'JOYSTICK' ? 'ring-4 ring-[#ffd700] ring-offset-2 ring-offset-black animate-pulse scale-105' : ''
+            }`}
+            title="Área do Manípulo (Toque em qualquer ponto desta zona ou WASD)"
+          >
+            {/* Rest Knob */}
+            <div
+              className="w-[clamp(32px,4.5vw,42px)] h-[clamp(32px,4.5vw,42px)] max-w-[11vh] max-h-[11vh] bg-[#ffd700] rounded-full border-2 border-[#161c28] absolute top-1/2 left-1/2 flex flex-col items-center justify-center shadow-md transition-transform pointer-events-none"
+              style={{
+                transform: isTouchActive ? 'translate(-50%, -50%) scale(0.85)' : 'translate(-50%, -50%)',
               }}
             >
               <div className="w-[clamp(8px,1.1vw,11px)] h-[clamp(8px,1.1vw,11px)] bg-[#161c28]/70 rounded-full" />
@@ -413,8 +591,8 @@ const HUDComponent: React.FC<HUDProps> = ({
           </div>
         </div>
 
-        {/* Contextual Boarding helper (shows only when player has followers and a taxi is waiting) */}
-        {followersCount > 0 && activeTaxi && (
+        {/* Contextual Boarding helper (shows when player has followers and taxi is waiting) */}
+        {followersCount > 0 && activeTaxi && !canBoard && (
           <button
             type="button"
             onClick={onInteractAction}
@@ -428,27 +606,35 @@ const HUDComponent: React.FC<HUDProps> = ({
           </button>
         )}
 
-        {/* 7, 8, 9. Two Stacked Circular Buttons (Bottom-Right) */}
-        <div className="flex flex-col items-center gap-[clamp(6px,1.5vh,12px)]">
-          {/* 8. Botão CHAMAR (Superior, Amarelo/Dourado) */}
+        {/* Two Stacked Circular Action Buttons (Bottom-Right) */}
+        <div className="flex flex-col items-center gap-[clamp(6px,1.5vh,12px)] z-30">
+          {/* Contextual Action Button: CHAMAR or LOTAR */}
           <button
             type="button"
-            onClick={onCallAction}
-            className={`w-[clamp(52px,7.0vw,72px)] h-[clamp(52px,7.0vw,72px)] max-w-[15vh] max-h-[15vh] rounded-full bg-[#ffd700] hover:bg-[#ffe066] active:scale-90 border-2 border-[#161c28] shadow-md flex flex-col items-center justify-center cursor-pointer transition-all select-none ${
+            onClick={canBoard ? onInteractAction : onCallAction}
+            className={`w-[clamp(54px,7.5vw,76px)] h-[clamp(54px,7.5vw,76px)] max-w-[16vh] max-h-[16vh] rounded-full active:scale-90 border-2 border-[#161c28] shadow-md flex flex-col items-center justify-center cursor-pointer transition-all select-none ${
+              canBoard
+                ? 'bg-[#fe6b00] hover:bg-[#ff7d1a] ring-4 ring-[#ffd700] ring-offset-2 ring-offset-black animate-pulse shadow-xl scale-105'
+                : 'bg-[#ffd700] hover:bg-[#ffe066]'
+            } ${
               tutorialHighlight === 'CALL' ? 'ring-4 ring-[#ffd700] ring-offset-2 ring-offset-black animate-bounce scale-110 shadow-2xl' : ''
             }`}
-            title="CHAMAR PASSAGEIROS [E]"
+            title={canBoard ? 'LOTAR TÁXI [ESPAÇO]' : 'CHAMAR PASSAGEIROS [E]'}
           >
             <SpriteIcon
               name="taxi_candongueiro_drive_0"
-              className="w-[clamp(22px,3.0vw,30px)] h-[clamp(14px,2.0vw,20px)] max-h-[6vh] pointer-events-none"
+              className="w-[clamp(24px,3.2vw,32px)] h-[clamp(16px,2.2vw,22px)] max-h-[6vh] pointer-events-none"
             />
-            <span className="text-[clamp(7px,0.85vw,9px)] font-anybody font-black uppercase text-[#161c28] tracking-wider leading-none mt-0.5 pointer-events-none">
-              CHAMAR
+            <span
+              className={`text-[clamp(9px,1.15vw,12px)] font-anybody font-black uppercase tracking-wider leading-none mt-0.5 pointer-events-none ${
+                canBoard ? 'text-white' : 'text-[#161c28]'
+              }`}
+            >
+              {canBoard ? 'LOTAR!' : 'CHAMAR'}
             </span>
           </button>
 
-          {/* 9. Botão CORRER (Inferior, Azul) */}
+          {/* Botão CORRER (Inferior, Azul) */}
           <button
             type="button"
             onTouchStart={() => onRunToggle(true)}
@@ -462,9 +648,9 @@ const HUDComponent: React.FC<HUDProps> = ({
           >
             <SpriteIcon
               name="effect_turbo"
-              className="w-[clamp(19px,2.6vw,26px)] h-[clamp(15px,2.1vw,20px)] max-h-[6vh] pointer-events-none"
+              className="w-[clamp(20px,2.8vw,28px)] h-[clamp(16px,2.2vw,22px)] max-h-[6vh] pointer-events-none"
             />
-            <span className="text-[clamp(7px,0.85vw,9px)] font-anybody font-black uppercase text-white tracking-wider leading-none mt-0.5 pointer-events-none">
+            <span className="text-[clamp(9px,1.1vw,11px)] font-anybody font-black uppercase text-white tracking-wider leading-none mt-0.5 pointer-events-none">
               CORRER
             </span>
           </button>

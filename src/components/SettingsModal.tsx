@@ -39,7 +39,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
   const handleQualitySelect = (quality: 'LOW' | 'MEDIUM' | 'HIGH') => {
     soundManager.playClick();
-    const updated = { ...settings, graphicQuality: quality };
+    const updated = { ...settings, graphicsQuality: quality };
     setSettings(updated);
     saveSettings(updated);
   };
@@ -153,7 +153,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                   key={q}
                   onClick={() => handleQualitySelect(q)}
                   className={`py-1.5 rounded-xl border-2 border-[#161c28] font-space font-bold text-xs uppercase ${
-                    settings.graphicQuality === q ? 'bg-[#fe6b00] text-white' : 'bg-white'
+                    settings.graphicsQuality === q ? 'bg-[#fe6b00] text-white' : 'bg-white'
                   }`}
                 >
                   {q === 'LOW' ? (isPT ? 'BAIXA' : 'LOW') : q === 'MEDIUM' ? (isPT ? 'MÉDIA' : 'MED') : (isPT ? 'ALTA' : 'HIGH')}

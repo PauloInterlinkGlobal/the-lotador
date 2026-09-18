@@ -22,7 +22,7 @@ import { HowToPlayGuide } from './components/HowToPlayGuide';
 import { PauseModal } from './components/PauseModal';
 import { PWAStatusBanner } from './components/PWAStatusBanner';
 import { TutorialOverlay, TutorialStep } from './components/TutorialOverlay';
-import { useMobileLifecycle } from './hooks/useMobileLifecycle';
+import { useMobileLifecycle, tryLockLandscapeWeb } from './hooks/useMobileLifecycle';
 import { DiagnosticOverlay } from './components/DiagnosticOverlay';
 import { LoadingScreen } from './components/LoadingScreen';
 import { RotateDeviceOverlay } from './components/RotateDeviceOverlay';
@@ -165,20 +165,7 @@ export default function App() {
 
   const startMatch = async (forceTutorial = false) => {
     soundManager.playClick();
-
-    // Best-effort Web screen orientation lock for supported mobile browsers (e.g. Android Chrome)
-    try {
-      if (typeof window !== 'undefined' && 'ontouchstart' in window) {
-        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-          await document.documentElement.requestFullscreen().catch(() => {});
-        }
-        if (screen.orientation && typeof (screen.orientation as any).lock === 'function') {
-          await (screen.orientation as any).lock('landscape').catch(() => {});
-        }
-      }
-    } catch {
-      // Ignored silently as iOS Safari and desktop do not allow web orientation lock
-    }
+    tryLockLandscapeWeb();
 
     const runTutorial = forceTutorial || (!stats.tutorialCompleted && stats.level === 1);
     setIsTutorial(runTutorial);
@@ -407,6 +394,9 @@ export default function App() {
 
   return (
     <div className="relative w-full h-screen bg-[#f9f9ff] overflow-hidden select-none">
+      {/* Universal Landscape Lock Overlay for Mobile Browsers */}
+      <RotateDeviceOverlay isTouch={mobileEnv.isTouch} />
+
       {/* Main Menu Screen */}
       {screen === 'MENU' && (
         <MainMenu
@@ -442,6 +432,7 @@ export default function App() {
             taxisLoadedCount={engineRef.current?.taxisLoadedCount || 0}
             activeDispute={activeDispute}
             floatingToasts={floatingToasts}
+            engine={engineRef.current}
             onCallAction={handleCallAction}
             onInteractAction={handleInteractAction}
             onJoystickMove={handleJoystickMove}
@@ -568,9 +559,6 @@ export default function App() {
         graphicsQuality={engineRef.current?.graphicsQuality || (mobileEnv.isLowEnd ? 'LOW' : 'MEDIUM')}
         lastSavedTime={storageManager.getLastSavedTime()}
       />
-
-      {/* Universal Landscape Lock Overlay for Mobile Browsers */}
-      <RotateDeviceOverlay />
     </div>
   );
 }

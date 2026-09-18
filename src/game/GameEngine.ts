@@ -15,7 +15,8 @@ import {
   PlayerStats,
   FloatingText,
   UrbanObstacle,
-  PassengerDispute
+  PassengerDispute,
+  OffScreenTaxiIndicator
 } from '../types/game';
 import { soundManager } from '../utils/audio';
 import { spriteAtlasManager } from '../utils/spriteAtlas';
@@ -760,6 +761,88 @@ export class GameEngine {
       // In tutorial, don't spawn rival lotadores so they don't harass or steal the player's passenger
       return;
     }
+
+    const currentZoneId = this.playerStats.selectedMapId || 'PARAGEM_URBANA';
+    const isMutamba = currentZoneId === 'PARAGEM_URBANA' || this.playerStats.level <= 1;
+
+    // Mutamba (Phase 1 post-tutorial): 0 rival lotadores to allow stress-free mastery of boarding and routes!
+    if (isMutamba) {
+      return;
+    }
+
+    // Viana Express (Phase 2): Introduce 1 steady rival (Manuel Veterano) with gentle speed
+    if (currentZoneId === 'VIANA_EXPRESS' || this.playerStats.level <= 3) {
+      const def = {
+        id: 'manuel',
+        name: 'Manuel',
+        nickname: 'Veterano',
+        spriteKey: 'npc_manuel',
+        color: 0x2e7d32,
+        pants: 0x572000,
+        pos: new THREE.Vector3(6, 0.6, 6),
+      };
+
+      const npcMesh = this.createStylizedCharacter(def.color, def.pants, false, def.spriteKey);
+      npcMesh.position.copy(def.pos);
+      this.scene.add(npcMesh);
+      this.npcMeshes.set(def.id, npcMesh);
+
+      this.npcs.push({
+        id: def.id,
+        name: def.name,
+        nickname: def.nickname,
+        specialty: 'ESTRATEGIA',
+        speed: 5.4,
+        persuasion: 0.65,
+        voiceRange: 4.0,
+        position: { x: def.pos.x, y: def.pos.y, z: def.pos.z },
+        targetPassengerId: null,
+        followingPassengerId: null,
+        color: '#' + def.color.toString(16),
+        shirtColor: '#' + def.color.toString(16),
+        state: 'IDLE',
+        passengersLoaded: 0,
+      });
+      return;
+    }
+
+    // Mercado dos Correios (Phase 3): 1 rival (Kito Relâmpago) with balanced speed
+    if (currentZoneId === 'MERCADO_CORREIOS' || this.playerStats.level <= 5) {
+      const def = {
+        id: 'kito',
+        name: 'Kito',
+        nickname: 'Relâmpago',
+        spriteKey: 'npc_kito',
+        color: 0xba1a1a,
+        pants: 0x161c28,
+        pos: new THREE.Vector3(-6, 0.6, 6),
+      };
+
+      const npcMesh = this.createStylizedCharacter(def.color, def.pants, false, def.spriteKey);
+      npcMesh.position.copy(def.pos);
+      this.scene.add(npcMesh);
+      this.npcMeshes.set(def.id, npcMesh);
+
+      this.npcs.push({
+        id: def.id,
+        name: def.name,
+        nickname: def.nickname,
+        specialty: 'VELOCIDADE',
+        speed: 6.6,
+        persuasion: 0.75,
+        voiceRange: 4.4,
+        position: { x: def.pos.x, y: def.pos.y, z: def.pos.z },
+        targetPassengerId: null,
+        followingPassengerId: null,
+        color: '#' + def.color.toString(16),
+        shirtColor: '#' + def.color.toString(16),
+        state: 'IDLE',
+        passengersLoaded: 0,
+      });
+      return;
+    }
+
+    // Talatona & Samba Terminal (Phases 4 & 5): Both rivals active in competitive mode!
     const npcDefs = [
       { id: 'kito', name: 'Kito', nickname: 'Relâmpago', spriteKey: 'npc_kito', color: 0xba1a1a, pants: 0x161c28, pos: new THREE.Vector3(-6, 0.6, 6) },
       { id: 'manuel', name: 'Manuel', nickname: 'Veterano', spriteKey: 'npc_manuel', color: 0x2e7d32, pants: 0x572000, pos: new THREE.Vector3(6, 0.6, 6) },
@@ -795,6 +878,97 @@ export class GameEngine {
       // In tutorial, disable moving obstacles so new players aren't tripped
       return;
     }
+
+    const currentZoneId = this.playerStats.selectedMapId || 'PARAGEM_URBANA';
+    const isMutamba = currentZoneId === 'PARAGEM_URBANA' || this.playerStats.level <= 1;
+
+    // Mutamba (Phase 1 post-tutorial): Only 1 peaceful Zungueira for Angolan atmosphere, 0 fiscals!
+    if (isMutamba) {
+      const def = {
+        id: 'zungueira_1',
+        name: 'Dona Maria (Zungueira)',
+        type: 'ZUNGUEIRA' as const,
+        spriteKey: 'obstacle_zungueira',
+        speed: 1.8,
+        patrol: [
+          { x: -20, z: 5.0 },
+          { x: 20, z: 5.0 },
+        ],
+      };
+      const mesh = this.createStylizedCharacter(0, 0, false, def.spriteKey);
+      mesh.position.set(def.patrol[0].x, 0.6, def.patrol[0].z);
+      this.scene.add(mesh);
+      this.obstacleMeshes.set(def.id, mesh);
+
+      this.urbanObstacles.push({
+        id: def.id,
+        type: def.type,
+        name: def.name,
+        position: { x: def.patrol[0].x, y: 0.6, z: def.patrol[0].z },
+        targetPos: { x: def.patrol[1].x, z: def.patrol[1].z },
+        patrolPoints: def.patrol,
+        currentPatrolIdx: 1,
+        speed: def.speed,
+        facingLeft: false,
+        animDistance: 0,
+        whistleCooldown: 0,
+        speechTimer: 0,
+      });
+      return;
+    }
+
+    // Viana Express (Phase 2): 2 Zungueiras, 0 fiscals!
+    if (currentZoneId === 'VIANA_EXPRESS' || this.playerStats.level <= 3) {
+      const obstacleDefs = [
+        {
+          id: 'zungueira_1',
+          name: 'Dona Maria (Zungueira)',
+          type: 'ZUNGUEIRA' as const,
+          spriteKey: 'obstacle_zungueira',
+          speed: 2.0,
+          patrol: [
+            { x: -22, z: 4.8 },
+            { x: 22, z: 5.2 },
+          ],
+        },
+        {
+          id: 'zungueira_2',
+          name: 'Mamã Rosa (Ambulante)',
+          type: 'ZUNGUEIRA' as const,
+          spriteKey: 'obstacle_zungueira',
+          speed: 2.3,
+          patrol: [
+            { x: 18, z: 7.2 },
+            { x: -18, z: 6.6 },
+          ],
+        },
+      ];
+
+      obstacleDefs.forEach((def) => {
+        const mesh = this.createStylizedCharacter(0, 0, false, def.spriteKey);
+        mesh.position.set(def.patrol[0].x, 0.6, def.patrol[0].z);
+        this.scene.add(mesh);
+        this.obstacleMeshes.set(def.id, mesh);
+
+        this.urbanObstacles.push({
+          id: def.id,
+          type: def.type,
+          name: def.name,
+          position: { x: def.patrol[0].x, y: 0.6, z: def.patrol[0].z },
+          targetPos: { x: def.patrol[1].x, z: def.patrol[1].z },
+          patrolPoints: def.patrol,
+          currentPatrolIdx: 1,
+          speed: def.speed,
+          facingLeft: false,
+          animDistance: 0,
+          whistleCooldown: 0,
+          speechTimer: 0,
+        });
+      });
+      return;
+    }
+
+    // Mercado dos Correios, Talatona & Samba: Fiscal João introduced with street patrol!
     const obstacleDefs: {
       id: string;
       name: string;
@@ -998,6 +1172,93 @@ export class GameEngine {
       y,
       visible: !isBehind && x >= 0 && x <= width && y >= 0 && y <= height,
     };
+  }
+
+  // Proximity check for contextual boarding action button ("LOTAR")
+  public canBoardAnyTaxi(): { canBoard: boolean; taxi: Taxi | null; passenger: Passenger | null } {
+    const followingP = this.passengers.find((p) => p.followedBy === 'PLAYER' && p.state === 'FOLLOWING');
+    if (!followingP) return { canBoard: false, taxi: null, passenger: null };
+
+    const matchingTaxi = this.taxis.find(
+      (t) =>
+        t.route === followingP.destination &&
+        (t.state === 'WAITING' || t.state === 'LOADING') &&
+        t.currentPassengers < t.capacity &&
+        Math.hypot(t.position.x - this.playerPos.x, t.position.z - this.playerPos.z) <= 4.2
+    );
+
+    return {
+      canBoard: !!matchingTaxi,
+      taxi: matchingTaxi || null,
+      passenger: followingP,
+    };
+  }
+
+  // Edge screen indicators for off-screen taxis with active available seats
+  public getOffScreenTaxiIndicators(): OffScreenTaxiIndicator[] {
+    if (!this.camera || !this.container) return [];
+
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    if (width <= 0 || height <= 0) return [];
+
+    // Filter active waiting/loading taxis that still have free capacity
+    const candidates = this.taxis.filter(
+      (t) => (t.state === 'WAITING' || t.state === 'LOADING') && t.currentPassengers < t.capacity
+    );
+    if (candidates.length === 0) return [];
+
+    // Check if player has any followers and their destinations
+    const followedDestinations = new Set(
+      this.passengers
+        .filter((p) => p.followedBy === 'PLAYER' && p.state === 'FOLLOWING')
+        .map((p) => p.destination)
+    );
+
+    const indicators: OffScreenTaxiIndicator[] = [];
+
+    for (const taxi of candidates) {
+      const screenPos = this.toScreenPosition(taxi.position);
+      // If it's comfortably inside the horizontal screen bounds, it's visible in 3D
+      const isVisibleOnScreen = screenPos.visible && screenPos.x >= 80 && screenPos.x <= width - 80;
+
+      if (!isVisibleOnScreen) {
+        // Taxi is off-screen! Determine direction relative to player position
+        const side: 'LEFT' | 'RIGHT' = taxi.position.x < this.playerPos.x ? 'LEFT' : 'RIGHT';
+        const distanceMeters = Math.max(1, Math.round(Math.abs(taxi.position.x - this.playerPos.x)));
+        const availableSeats = Math.max(0, taxi.capacity - taxi.currentPassengers);
+        const isDestinationMatching = followedDestinations.has(taxi.route);
+
+        // Color theme by route
+        let color = '#00b4d8'; // VIANA cyan/blue
+        if (taxi.route === 'TALATONA') color = '#fe6b00';
+        else if (taxi.route === 'CENTRO') color = '#ffd700';
+
+        indicators.push({
+          id: taxi.id,
+          route: taxi.route,
+          side,
+          distanceMeters,
+          availableSeats,
+          capacity: taxi.capacity,
+          isDestinationMatching,
+          color,
+        });
+      }
+    }
+
+    // Sort: matching destinations first, then closest distance
+    indicators.sort((a, b) => {
+      if (a.isDestinationMatching && !b.isDestinationMatching) return -1;
+      if (!a.isDestinationMatching && b.isDestinationMatching) return 1;
+      return a.distanceMeters - b.distanceMeters;
+    });
+
+    // Return at most 2 closest indicators per side to keep UI crisp and un-cluttered
+    const leftList = indicators.filter((i) => i.side === 'LEFT').slice(0, 2);
+    const rightList = indicators.filter((i) => i.side === 'RIGHT').slice(0, 2);
+
+    return [...leftList, ...rightList];
   }
 
   public spawnTaxi(forcedRoute?: RouteType) {
@@ -1963,7 +2224,10 @@ export class GameEngine {
     dispute.timer -= delta;
 
     const npc = this.npcs.find((n) => n.id === dispute.npcId);
-    const pullRate = npc?.specialty === 'ESTRATEGIA' ? 22 : 16;
+    const basePull = npc?.specialty === 'ESTRATEGIA' ? 18 : 13;
+    const currentZoneId = this.playerStats.selectedMapId || 'PARAGEM_URBANA';
+    const zoneMultiplier = currentZoneId === 'VIANA_EXPRESS' || this.playerStats.level <= 3 ? 0.65 : 1.0;
+    const pullRate = basePull * zoneMultiplier;
     dispute.playerProgress = Math.max(5, dispute.playerProgress - pullRate * delta);
 
     if (dispute.timer <= 0) {

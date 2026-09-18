@@ -162,3 +162,26 @@ export function useMobileLifecycle(options: UseMobileLifecycleOptions = {}) {
 
   return env;
 }
+
+/**
+ * Best-effort Web screen orientation lock for supported mobile browsers (e.g. Android Chrome).
+ * Must be triggered by a genuine user gesture (such as clicking "Jogar").
+ * Safely ignores errors if fullscreen or orientation lock are unsupported or rejected.
+ */
+export async function tryLockLandscapeWeb(): Promise<void> {
+  if (Capacitor.isNativePlatform()) return;
+
+  try {
+    if (typeof window === 'undefined') return;
+
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      await document.documentElement.requestFullscreen().catch(() => {});
+    }
+
+    if (screen && screen.orientation && typeof (screen.orientation as any).lock === 'function') {
+      await (screen.orientation as any).lock('landscape').catch(() => {});
+    }
+  } catch {
+    // Ignored silently as unsupported in iOS Safari or unallowed by browser security
+  }
+}

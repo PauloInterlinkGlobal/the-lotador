@@ -1,48 +1,41 @@
 /**
  * LOTADOR - Rotate Device Overlay
  * Forces landscape orientation on mobile/tablet browser viewports.
- * Displays an animated prompt when a handheld touch device is held in portrait mode.
+ * Displays an animated full-screen barrier when a handheld touch device is held in portrait mode.
  */
 
 import React, { useState, useEffect } from 'react';
 
-export const RotateDeviceOverlay: React.FC = () => {
-  const [isPortraitMobile, setIsPortraitMobile] = useState(false);
+interface RotateDeviceOverlayProps {
+  isTouch: boolean;
+}
+
+export const RotateDeviceOverlay: React.FC<RotateDeviceOverlayProps> = ({ isTouch }) => {
+  const [isPortrait, setIsPortrait] = useState(false);
 
   useEffect(() => {
-    // Only apply on touch/mobile/tablet devices
+    if (!isTouch || typeof window === 'undefined') {
+      setIsPortrait(false);
+      return;
+    }
+
     const checkOrientation = () => {
-      if (typeof window === 'undefined') return;
-
-      const hasTouch =
-        'ontouchstart' in window ||
-        navigator.maxTouchPoints > 0 ||
-        (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-
-      if (!hasTouch) {
-        setIsPortraitMobile(false);
-        return;
-      }
-
-      // Check portrait condition
       const mql = window.matchMedia('(orientation: portrait)');
-      const isPortraitByMql = mql.matches;
-      const isPortraitByDimensions = window.innerHeight > window.innerWidth;
-
-      setIsPortraitMobile(isPortraitByMql || isPortraitByDimensions);
+      const portraitByMql = mql.matches;
+      const portraitByDimensions = window.innerHeight > window.innerWidth;
+      setIsPortrait(portraitByMql || portraitByDimensions);
     };
 
     // Initial check
     checkOrientation();
 
-    // Listeners
     const mql = window.matchMedia('(orientation: portrait)');
     const handleMqlChange = () => checkOrientation();
 
     if (mql.addEventListener) {
       mql.addEventListener('change', handleMqlChange);
     } else {
-      mql.addListener(handleMqlChange);
+      (mql as any).addListener(handleMqlChange);
     }
 
     window.addEventListener('resize', checkOrientation);
@@ -52,21 +45,33 @@ export const RotateDeviceOverlay: React.FC = () => {
       if (mql.removeEventListener) {
         mql.removeEventListener('change', handleMqlChange);
       } else {
-        mql.removeListener(handleMqlChange);
+        (mql as any).removeListener(handleMqlChange);
       }
       window.removeEventListener('resize', checkOrientation);
       window.removeEventListener('orientationchange', checkOrientation);
     };
-  }, []);
+  }, [isTouch]);
 
-  if (!isPortraitMobile) {
+  // Lock body scroll while overlay is active
+  useEffect(() => {
+    if (isTouch && isPortrait) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prevOverflow;
+      };
+    }
+  }, [isTouch, isPortrait]);
+
+  // Never render on desktop or when in landscape orientation
+  if (!isTouch || !isPortrait) {
     return null;
   }
 
   return (
     <div
       id="rotate-device-overlay"
-      className="fixed inset-0 z-[99999] bg-[#0a192f] text-white flex flex-col items-center justify-center p-6 select-none touch-none text-center"
+      className="fixed inset-0 z-[9999] bg-[#0a192f] text-white flex flex-col items-center justify-center p-6 select-none touch-none text-center"
       style={{
         width: '100vw',
         height: '100vh',
@@ -78,7 +83,7 @@ export const RotateDeviceOverlay: React.FC = () => {
 
       {/* Brand Header */}
       <div className="relative z-10 mb-8 flex flex-col items-center">
-        <span className="text-[11px] font-bold tracking-[0.25em] text-amber-400/90 uppercase font-space">
+        <span className="text-[11px] font-bold tracking-[0.25em] text-[#ffcc33] uppercase font-space">
           Luanda Taxi Craze
         </span>
         <h1 className="font-anybody font-black text-3xl sm:text-4xl tracking-wider text-white uppercase mt-1">
@@ -88,9 +93,9 @@ export const RotateDeviceOverlay: React.FC = () => {
 
       {/* Animated Phone Rotation Graphic (Pure CSS & SVG) */}
       <div className="relative z-10 mb-8 flex items-center justify-center">
-        <div className="w-28 h-28 rounded-3xl bg-slate-900/90 border-2 border-amber-400/40 flex items-center justify-center shadow-[0_0_35px_rgba(245,158,11,0.25)]">
+        <div className="w-28 h-28 rounded-3xl bg-slate-900/90 border-2 border-[#ffcc33]/40 flex items-center justify-center shadow-[0_0_35px_rgba(255,204,51,0.25)]">
           <svg
-            className="w-14 h-14 text-amber-400 animate-phone-rotate"
+            className="w-14 h-14 text-[#ffcc33] animate-phone-rotate"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -108,18 +113,18 @@ export const RotateDeviceOverlay: React.FC = () => {
         </div>
 
         {/* Circular Curved Rotation Indicator Arrow */}
-        <div className="absolute -top-3 -right-3 w-10 h-10 rounded-full bg-amber-500 text-slate-950 font-bold flex items-center justify-center shadow-md animate-pulse">
+        <div className="absolute -top-3 -right-3 w-10 h-10 rounded-full bg-[#ffcc33] text-slate-950 font-bold flex items-center justify-center shadow-md animate-pulse">
           <span className="material-symbols-outlined text-xl">screen_rotation</span>
         </div>
       </div>
 
       {/* Main Instructions in Portuguese */}
       <div className="relative z-10 max-w-sm flex flex-col items-center gap-2">
-        <h2 className="font-anybody font-black text-2xl text-amber-400 uppercase tracking-wide">
-          Posição Horizontal Obrigatória
+        <h2 className="font-anybody font-black text-2xl text-[#ffcc33] uppercase tracking-wide">
+          Vira o telemóvel
         </h2>
         <p className="text-sm sm:text-base text-slate-200 font-medium leading-relaxed font-work">
-          Por favor, vire o seu dispositivo para a posição horizontal (paisagem) para jogar.
+          LOTADOR joga-se exclusivamente na horizontal para veres a paragem e os candongueiros na estrada.
         </p>
       </div>
 
