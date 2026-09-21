@@ -18,6 +18,7 @@ import {
   PassengerDispute,
   OffScreenTaxiIndicator
 } from '../types/game';
+import { LevelData } from '../types/levelObjectives';
 import { soundManager } from '../utils/audio';
 import { spriteAtlasManager } from '../utils/spriteAtlas';
 import { CAMPAIGN_ZONES } from '../utils/storage';
@@ -31,6 +32,9 @@ export interface GameEngineCallbacks {
   onStaminaChange: (current: number, max: number) => void;
   onPassengerServedCount: (count: number) => void;
   onDisputeUpdate?: (dispute: PassengerDispute | null) => void;
+  onDisputeWon?: () => void;
+  onObstacleCollision?: (type: 'ZUNGUEIRA' | 'FISCAL') => void;
+  onFullCapacityTrip?: (taxi: Taxi) => void;
   onPlayerMove?: (distanceTotal: number) => void;
   onPassengerFollowed?: (p: Passenger) => void;
   onPassengerBoarded?: (p: Passenger, taxi: Taxi) => void;
@@ -47,6 +51,7 @@ export class GameEngine {
   // 3D Taxi Model Cache (Toyota HiAce GLB)
   private static cachedTaxiModel: THREE.Group | null = null;
   private static taxiModelLoadingPromise: Promise<THREE.Group> | null = null;
+  private static readonly _tempScreenVec = new THREE.Vector3();
 
   /**
    * Loads and caches the real Toyota HiAce GLB model with PBR materials,
@@ -202,6 +207,7 @@ export class GameEngine {
   private staminaDrainRate = 35;
   public playerStats: PlayerStats;
   public isTutorial = false;
+  public levelConfig: LevelData | null = null;
   public playerMovedDistance = 0;
   public tutorialPassengerId: string | null = null;
   
@@ -326,7 +332,9 @@ export class GameEngine {
   private particles: {
     sprite: THREE.Sprite | THREE.Mesh;
     isDust?: boolean;
-    velocity: THREE.Vector3;
+    vx: number;
+    vy: number;
+    vz: number;
     life: number;
     maxLife: number;
     scaleStart: number;
@@ -337,12 +345,13 @@ export class GameEngine {
     container: HTMLElement, 
     playerStats: PlayerStats, 
     callbacks: GameEngineCallbacks,
-    options?: { isTutorial?: boolean }
+    options?: { isTutorial?: boolean; levelConfig?: LevelData | null }
   ) {
     this.container = container;
     this.playerStats = playerStats;
     this.callbacks = callbacks;
     this.isTutorial = !!options?.isTutorial;
+    this.levelConfig = options?.levelConfig || null;
 
     // Apply Campaign Zone Multiplier
     const selectedZone = CAMPAIGN_ZONES.find((z) => z.id === playerStats.selectedMapId);
@@ -370,8 +379,10 @@ export class GameEngine {
   // Spawns dust cloud particle at ground level using object pooling
   public spawnDustParticle(x: number, y: number, z: number, scale = 0.4) {
     const now = performance.now();
-    if (now - this.lastDustSpawnTime < 75) return; // at most ~13 dust particles per sec
-    if (this.particles.length >= 25) return; // cap simultaneous active particles
+    const minInterval = this.graphicsQuality === 'LOW' ? 140 : this.graphicsQuality === 'MEDIUM' ? 90 : 60;
+    if (now - this.lastDustSpawnTime < minInterval) return;
+    const maxParticles = this.graphicsQuality === 'LOW' ? 8 : this.graphicsQuality === 'MEDIUM' ? 16 : 30;
+    if (this.particles.length >= maxParticles) return;
     this.lastDustSpawnTime = now;
 
     let mesh = this.dustMeshPool.pop();
@@ -388,7 +399,9 @@ export class GameEngine {
     this.particles.push({
       sprite: mesh,
       isDust: true,
-      velocity: new THREE.Vector3((Math.random() - 0.5) * 0.5, 0.25, (Math.random() - 0.5) * 0.5),
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: 0.25,
+      vz: (Math.random() - 0.5) * 0.5,
       life: 0.35,
       maxLife: 0.35,
       scaleStart: scale,
@@ -403,6 +416,9 @@ export class GameEngine {
     scale = 1.6, 
     velocityY = 2.2
   ) {
+    const maxParticles = this.graphicsQuality === 'LOW' ? 10 : this.graphicsQuality === 'MEDIUM' ? 20 : 35;
+    if (this.particles.length >= maxParticles) return;
+
     const tex = spriteAtlasManager.getTexture(frameName);
     let sprite = this.spriteParticlePool.pop();
     if (!sprite) {
@@ -422,7 +438,9 @@ export class GameEngine {
     this.particles.push({
       sprite,
       isDust: false,
-      velocity: new THREE.Vector3((Math.random() - 0.5) * 1.2, velocityY, (Math.random() - 0.5) * 1.2),
+      vx: (Math.random() - 0.5) * 1.2,
+      vy: velocityY,
+      vz: (Math.random() - 0.5) * 1.2,
       life: 1.0,
       maxLife: 1.0,
       scaleStart: scale,
@@ -431,6 +449,8 @@ export class GameEngine {
   }
 
   private updateParticles(delta: number) {
+    if (this.particles.length === 0) return;
+
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
       p.life -= delta;
@@ -450,9 +470,9 @@ export class GameEngine {
       }
 
       const t = 1 - p.life / p.maxLife;
-      p.sprite.position.x += p.velocity.x * delta;
-      p.sprite.position.y += p.velocity.y * delta;
-      p.sprite.position.z += p.velocity.z * delta;
+      p.sprite.position.x += p.vx * delta;
+      p.sprite.position.y += p.vy * delta;
+      p.sprite.position.z += p.vz * delta;
 
       const currentScale = p.scaleStart + (p.scaleEnd - p.scaleStart) * t;
       p.sprite.scale.set(currentScale, currentScale, 1);
@@ -603,23 +623,23 @@ export class GameEngine {
 
     // 3. Establishments & Buildings (Detailed Angolan Urban Architecture)
     // Central Commercial Strip behind sidewalk (z = 12)
-    const backgroundBuildings = BuildingManager.generateCityBackground(-28, 28, 7.6, 12);
+    const backgroundBuildings = BuildingManager.generateCityBackground(-28, 28, 7.6, 12, this.graphicsQuality);
     backgroundBuildings.forEach((bGroup) => {
       this.scene.add(bGroup);
     });
 
     // Lateral Wings & Side Streets (x < -28 and x > 28)
-    const lateralBuildings = BuildingManager.generateLateralStreets();
+    const lateralBuildings = BuildingManager.generateLateralStreets(this.graphicsQuality);
     lateralBuildings.forEach((bGroup) => {
       this.scene.add(bGroup);
     });
 
     // Distant City Skyline (z = 20) with residential buildings, tin roofs, and water tanks
-    const distantSkyline = BuildingManager.generateDistantSkyline();
+    const distantSkyline = BuildingManager.generateDistantSkyline(this.graphicsQuality);
     this.scene.add(distantSkyline);
 
     // Street life props: lamps, trash bins, Luanda road signs, Multicaixa ATM, market stalls
-    const urbanProps = BuildingManager.generateUrbanProps();
+    const urbanProps = BuildingManager.generateUrbanProps(this.graphicsQuality);
     urbanProps.forEach((prop) => {
       this.scene.add(prop);
     });
@@ -645,7 +665,7 @@ export class GameEngine {
     const postMat = new THREE.MeshLambertMaterial({ color: 0x705d00 });
     const post = new THREE.Mesh(postGeo, postMat);
     post.position.y = 1.6;
-    post.castShadow = true;
+    post.castShadow = this.graphicsQuality !== 'LOW';
     group.add(post);
 
     // Paragem / Bus Stop Sprite from Atlas
@@ -667,7 +687,7 @@ export class GameEngine {
     const benchMat = new THREE.MeshLambertMaterial({ color: 0x572000 });
     const bench = new THREE.Mesh(benchGeo, benchMat);
     bench.position.y = 0.2;
-    bench.castShadow = true;
+    bench.castShadow = this.graphicsQuality !== 'LOW';
     group.add(bench);
 
     // Stall / Market bench accent from atlas if available
@@ -689,7 +709,7 @@ export class GameEngine {
     const trunkMat = new THREE.MeshLambertMaterial({ color: 0x572000 });
     const trunk = new THREE.Mesh(trunkGeo, trunkMat);
     trunk.position.y = 1.0;
-    trunk.castShadow = true;
+    trunk.castShadow = this.graphicsQuality !== 'LOW';
     group.add(trunk);
 
     // Real Tree Sprite from Atlas
@@ -759,6 +779,75 @@ export class GameEngine {
   private initNPCs() {
     if (this.isTutorial) {
       // In tutorial, don't spawn rival lotadores so they don't harass or steal the player's passenger
+      return;
+    }
+
+    // If running in Level-based campaign mode, spawn exactly the rivals defined for that level
+    if (this.levelConfig) {
+      if (this.levelConfig.rival_count === 0) {
+        return;
+      }
+
+      const allLevelRivals = [
+        {
+          id: 'manuel',
+          name: 'Manuel',
+          nickname: 'Veterano',
+          spriteKey: 'npc_manuel',
+          color: 0x2e7d32,
+          pants: 0x572000,
+          pos: new THREE.Vector3(6, 0.6, 6),
+          speed: this.levelConfig.rival_speed ? this.levelConfig.rival_speed * 0.9 : 5.2,
+          specialty: 'ESTRATEGIA' as const,
+        },
+        {
+          id: 'kito',
+          name: 'Kito',
+          nickname: 'Relâmpago',
+          spriteKey: 'npc_kito',
+          color: 0xba1a1a,
+          pants: 0x161c28,
+          pos: new THREE.Vector3(-6, 0.6, 6),
+          speed: this.levelConfig.rival_speed || 6.5,
+          specialty: 'VELOCIDADE' as const,
+        },
+        {
+          id: 'zeca',
+          name: 'Zeca',
+          nickname: 'Furacão',
+          spriteKey: 'npc_kito',
+          color: 0x0288d1,
+          pants: 0x3e2723,
+          pos: new THREE.Vector3(12, 0.6, 7),
+          speed: (this.levelConfig.rival_speed || 7.0) * 1.05,
+          specialty: 'PERSUASAO' as const,
+        },
+      ];
+
+      const toSpawn = allLevelRivals.slice(0, this.levelConfig.rival_count);
+      toSpawn.forEach((def) => {
+        const npcMesh = this.createStylizedCharacter(def.color, def.pants, false, def.spriteKey);
+        npcMesh.position.copy(def.pos);
+        this.scene.add(npcMesh);
+        this.npcMeshes.set(def.id, npcMesh);
+
+        this.npcs.push({
+          id: def.id,
+          name: def.name,
+          nickname: def.nickname,
+          specialty: def.specialty,
+          speed: def.speed,
+          persuasion: 0.75,
+          voiceRange: 4.4,
+          position: { x: def.pos.x, y: def.pos.y, z: def.pos.z },
+          targetPassengerId: null,
+          followingPassengerId: null,
+          color: '#' + def.color.toString(16),
+          shirtColor: '#' + def.color.toString(16),
+          state: 'IDLE',
+          passengersLoaded: 0,
+        });
+      });
       return;
     }
 
@@ -876,6 +965,146 @@ export class GameEngine {
   private initObstacles() {
     if (this.isTutorial) {
       // In tutorial, disable moving obstacles so new players aren't tripped
+      return;
+    }
+
+    // Level-specific obstacle setup if playing a designated level
+    if (this.levelConfig) {
+      const obstacleCount = this.levelConfig.obstacle_count ?? 1;
+      const fiscalCount = this.levelConfig.fiscal_count ?? 0;
+
+      if (obstacleCount >= 1) {
+        const def = {
+          id: 'zungueira_1',
+          name: 'Dona Maria (Zungueira)',
+          type: 'ZUNGUEIRA' as const,
+          spriteKey: 'obstacle_zungueira',
+          speed: 1.8,
+          patrol: [
+            { x: -20, z: 5.0 },
+            { x: 20, z: 5.0 },
+          ],
+        };
+        const mesh = this.createStylizedCharacter(0, 0, false, def.spriteKey);
+        mesh.position.set(def.patrol[0].x, 0.6, def.patrol[0].z);
+        this.scene.add(mesh);
+        this.obstacleMeshes.set(def.id, mesh);
+
+        this.urbanObstacles.push({
+          id: def.id,
+          type: def.type,
+          name: def.name,
+          position: { x: def.patrol[0].x, y: 0.6, z: def.patrol[0].z },
+          targetPos: { x: def.patrol[1].x, z: def.patrol[1].z },
+          patrolPoints: def.patrol,
+          currentPatrolIdx: 1,
+          speed: def.speed,
+          facingLeft: false,
+          animDistance: 0,
+          whistleCooldown: 0,
+          speechTimer: 0,
+        });
+      }
+
+      if (obstacleCount >= 2) {
+        const def = {
+          id: 'zungueira_2',
+          name: 'Mamã Rosa (Ambulante)',
+          type: 'ZUNGUEIRA' as const,
+          spriteKey: 'obstacle_zungueira',
+          speed: 2.2,
+          patrol: [
+            { x: 18, z: 7.2 },
+            { x: -18, z: 6.6 },
+          ],
+        };
+        const mesh = this.createStylizedCharacter(0, 0, false, def.spriteKey);
+        mesh.position.set(def.patrol[0].x, 0.6, def.patrol[0].z);
+        this.scene.add(mesh);
+        this.obstacleMeshes.set(def.id, mesh);
+
+        this.urbanObstacles.push({
+          id: def.id,
+          type: def.type,
+          name: def.name,
+          position: { x: def.patrol[0].x, y: 0.6, z: def.patrol[0].z },
+          targetPos: { x: def.patrol[1].x, z: def.patrol[1].z },
+          patrolPoints: def.patrol,
+          currentPatrolIdx: 1,
+          speed: def.speed,
+          facingLeft: false,
+          animDistance: 0,
+          whistleCooldown: 0,
+          speechTimer: 0,
+        });
+      }
+
+      if (fiscalCount >= 1) {
+        const def = {
+          id: 'fiscal_1',
+          name: 'Fiscal João',
+          type: 'FISCAL' as const,
+          spriteKey: 'obstacle_fiscal',
+          speed: 1.6,
+          patrol: [
+            { x: -12, z: 3.5 },
+            { x: 12, z: 3.5 },
+          ],
+        };
+        const mesh = this.createStylizedCharacter(0, 0, false, def.spriteKey);
+        mesh.position.set(def.patrol[0].x, 0.6, def.patrol[0].z);
+        this.scene.add(mesh);
+        this.obstacleMeshes.set(def.id, mesh);
+
+        this.urbanObstacles.push({
+          id: def.id,
+          type: def.type,
+          name: def.name,
+          position: { x: def.patrol[0].x, y: 0.6, z: def.patrol[0].z },
+          targetPos: { x: def.patrol[1].x, z: def.patrol[1].z },
+          patrolPoints: def.patrol,
+          currentPatrolIdx: 1,
+          speed: def.speed,
+          facingLeft: false,
+          animDistance: 0,
+          whistleCooldown: 0,
+          speechTimer: 0,
+        });
+      }
+
+      if (fiscalCount >= 2) {
+        const def = {
+          id: 'fiscal_2',
+          name: 'Fiscal António',
+          type: 'FISCAL' as const,
+          spriteKey: 'obstacle_fiscal',
+          speed: 1.9,
+          patrol: [
+            { x: 10, z: 8.5 },
+            { x: -10, z: 8.5 },
+          ],
+        };
+        const mesh = this.createStylizedCharacter(0, 0, false, def.spriteKey);
+        mesh.position.set(def.patrol[0].x, 0.6, def.patrol[0].z);
+        this.scene.add(mesh);
+        this.obstacleMeshes.set(def.id, mesh);
+
+        this.urbanObstacles.push({
+          id: def.id,
+          type: def.type,
+          name: def.name,
+          position: { x: def.patrol[0].x, y: 0.6, z: def.patrol[0].z },
+          targetPos: { x: def.patrol[1].x, z: def.patrol[1].z },
+          patrolPoints: def.patrol,
+          currentPatrolIdx: 1,
+          speed: def.speed,
+          facingLeft: false,
+          animDistance: 0,
+          whistleCooldown: 0,
+          speechTimer: 0,
+        });
+      }
+
       return;
     }
 
@@ -1110,6 +1339,24 @@ export class GameEngine {
       return;
     }
 
+    if (this.levelConfig) {
+      const slots = this.levelConfig.taxi_slots_count ?? 2;
+      if (slots === 1) {
+        this.spawnTaxi('VIANA');
+        for (let i = 0; i < 4; i++) this.spawnPassenger();
+      } else if (slots === 2) {
+        this.spawnTaxi('VIANA');
+        this.spawnTaxi('CENTRO');
+        for (let i = 0; i < 6; i++) this.spawnPassenger();
+      } else {
+        this.spawnTaxi('VIANA');
+        this.spawnTaxi('TALATONA');
+        this.spawnTaxi('CENTRO');
+        for (let i = 0; i < 8; i++) this.spawnPassenger();
+      }
+      return;
+    }
+
     // Spawn initial Taxis
     this.spawnTaxi('VIANA');
     this.spawnTaxi('TALATONA');
@@ -1160,7 +1407,7 @@ export class GameEngine {
   // 3D world position to 2D screen coordinate projection for tutorial pointers
   public toScreenPosition(pos: { x: number; y: number; z: number }): { x: number; y: number; visible: boolean } {
     if (!this.camera || !this.container) return { x: 0, y: 0, visible: false };
-    const v = new THREE.Vector3(pos.x, (pos.y || 0.6) + 1.2, pos.z);
+    const v = GameEngine._tempScreenVec.set(pos.x, (pos.y || 0.6) + 1.2, pos.z);
     v.project(this.camera);
     const isBehind = v.z > 1;
     const width = this.container.clientWidth;
@@ -1262,7 +1509,9 @@ export class GameEngine {
   }
 
   public spawnTaxi(forcedRoute?: RouteType) {
-    const emptySlotIndex = this.taxiSlots.findIndex((s) => !s.occupied);
+    const maxSlots = this.levelConfig ? (this.levelConfig.taxi_slots_count ?? 3) : 3;
+    const availableSlots = this.taxiSlots.slice(0, maxSlots);
+    const emptySlotIndex = availableSlots.findIndex((s) => !s.occupied);
     if (emptySlotIndex === -1) return;
 
     const routes: RouteType[] = ['VIANA', 'TALATONA', 'CENTRO'];
@@ -1325,6 +1574,20 @@ export class GameEngine {
         });
     }
 
+    // Lightweight soft contact shadow under taxi (ensures grounded look in LOW quality)
+    const shadowGeo = new THREE.PlaneGeometry(2.3, 5.2);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x050811,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+    });
+    const groundShadow = new THREE.Mesh(shadowGeo, shadowMat);
+    groundShadow.rotation.x = -Math.PI / 2;
+    groundShadow.position.set(0, 0.02, 0);
+    groundShadow.name = 'taxiGroundShadow';
+    group.add(groundShadow);
+
     // Mount destination sign (VIANA / TALATONA / CENTRO) on top of the taxi
     this.addDestinationSignToGroup(group, route);
 
@@ -1338,10 +1601,10 @@ export class GameEngine {
   private attachHiaceModelToGroup(group: THREE.Group, route: RouteType) {
     if (!GameEngine.cachedTaxiModel) return;
 
-    // Clean up any non-sign children
+    // Clean up any non-sign children (preserving ground shadow)
     const toRemove: THREE.Object3D[] = [];
     group.children.forEach((c) => {
-      if (c.name !== 'destinationSignGroup') {
+      if (c.name !== 'destinationSignGroup' && c.name !== 'taxiGroundShadow') {
         toRemove.push(c);
       }
     });
@@ -1350,6 +1613,16 @@ export class GameEngine {
     // Shared geometry and material clone (zero duplicate GPU buffers)
     const modelClone = GameEngine.cachedTaxiModel.clone(true);
     modelClone.name = 'hiaceVanModel';
+
+    if (this.graphicsQuality === 'LOW') {
+      modelClone.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          child.castShadow = false;
+          child.receiveShadow = false;
+        }
+      });
+    }
+
     group.add(modelClone);
   }
 
@@ -1629,6 +1902,8 @@ export class GameEngine {
     soundManager.playTaxiFull();
     soundManager.vibrate(100);
 
+    this.callbacks.onFullCapacityTrip?.(taxi);
+
     // Particles on taxi filled
     this.spawnSpriteParticle('effect_taxi_full', roofPos, 2.6, 3.0);
     this.spawnSpriteParticle('effect_combo', roofPos, 2.2, 2.5);
@@ -1700,6 +1975,18 @@ export class GameEngine {
     };
   }
 
+  public getDiagnostics() {
+    return {
+      fps: Math.round(this.currentFps),
+      drawCalls: this.renderer?.info?.render?.calls || 0,
+      triangles: this.renderer?.info?.render?.triangles || 0,
+      geometries: this.renderer?.info?.memory?.geometries || 0,
+      textures: this.renderer?.info?.memory?.textures || 0,
+      quality: this.graphicsQuality,
+      entities: this.getEntitiesCount(),
+    };
+  }
+
   public setGraphicsQuality(quality: 'LOW' | 'MEDIUM' | 'HIGH') {
     this.graphicsQuality = quality;
     if (!this.renderer) return;
@@ -1732,14 +2019,14 @@ export class GameEngine {
       this.stamina = Math.min(this.maxStamina, this.stamina + this.staminaRecoveryRate * delta);
     }
     
-    // Stamina throttling: Only notify React when the change is noticeable (>= 1.5) or at extremes (0 / full), capped at ~10x/sec
+    // Stamina throttling: Only notify React when the change is noticeable (>= 3.0) or at extremes (0 / full), capped at ~5x/sec
     const now = performance.now();
     const staminaDelta = Math.abs(this.stamina - this.lastReportedStamina);
     const isExtreme = (this.stamina <= 0 && this.lastReportedStamina > 0) ||
                       (this.stamina >= this.maxStamina && this.lastReportedStamina < this.maxStamina);
     const timeSinceLastReport = now - this.lastStaminaReportTime;
 
-    if (isExtreme || (staminaDelta >= 1.5 && timeSinceLastReport >= 100)) {
+    if (isExtreme || (staminaDelta >= 3.0 && timeSinceLastReport >= 180)) {
       this.lastReportedStamina = this.stamina;
       this.lastStaminaReportTime = now;
       this.callbacks.onStaminaChange(this.stamina, this.maxStamina);
@@ -2063,6 +2350,7 @@ export class GameEngine {
 
             this.callbacks.onFloatingText(`🥭 ${phrase}`, '#e65100', obs.position);
             this.spawnSpriteParticle('effect_passenger_lost', obs.position, 1.4, 1.8);
+            this.callbacks.onObstacleCollision?.('ZUNGUEIRA');
           }
         }
       } else if (obs.type === 'FISCAL') {
@@ -2090,6 +2378,7 @@ export class GameEngine {
 
             this.callbacks.onFloatingText(`👮 FISCAL: ${phrase} (-25 Stamina)`, '#ba1a1a', obs.position);
             this.spawnSpriteParticle('effect_turbo', obs.position, 1.5, 2.0);
+            this.callbacks.onObstacleCollision?.('FISCAL');
           }
         }
       }
@@ -2183,6 +2472,7 @@ export class GameEngine {
 
     this.callbacks.onScoreUpdate(this.matchKz, this.matchXp, this.combo);
     this.callbacks.onFloatingText('🏆 PERSUASÃO VENCEU! +150 Kz (+50 XP)', '#ffd700', dispute.position);
+    this.callbacks.onDisputeWon?.();
 
     setTimeout(() => {
       this.activeDispute = null;
@@ -2431,14 +2721,18 @@ export class GameEngine {
 
       // Following state
       if (p.state === 'FOLLOWING') {
-        let leaderPos = this.playerPos;
+        let leaderX = this.playerPos.x;
+        let leaderZ = this.playerPos.z;
         if (p.followedBy !== 'PLAYER') {
           const npc = this.npcs.find((n) => n.id === p.followedBy);
-          if (npc) leaderPos = new THREE.Vector3(npc.position.x, 0.6, npc.position.z);
+          if (npc) {
+            leaderX = npc.position.x;
+            leaderZ = npc.position.z;
+          }
         }
 
-        const dx = leaderPos.x - p.position.x;
-        const dz = leaderPos.z - p.position.z;
+        const dx = leaderX - p.position.x;
+        const dz = leaderZ - p.position.z;
         const dist = Math.hypot(dx, dz);
 
         if (dist > 1.2) {

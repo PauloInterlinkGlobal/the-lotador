@@ -159,6 +159,11 @@ export interface PlayerStats {
   selectedMapId: string;
   unlockedMaps: string[];
   tutorialCompleted?: boolean;
+
+  // Progression & Levels (Fases 1 a 20)
+  highestUnlockedLevel?: number; // Highest level unlocked (1 - 20)
+  levelStars?: Record<number, number>; // Stars (1-3) earned per level
+  levelHighScores?: Record<number, number>; // Best Kz score per level
 }
 
 export interface CampaignZone {
@@ -211,6 +216,30 @@ export interface MatchResults {
   unlockedZoneName?: string;
   isTutorial?: boolean;
   isVictory?: boolean;
+  // Level Progression Additions
+  levelId?: number;
+  levelNumber?: number;
+  levelTitle?: string;
+  zoneName?: string;
+  starsEarned?: number; // 0, 1, 2, 3
+  starsBreakdown?: {
+    star1: boolean;
+    star2: boolean;
+    star3: boolean;
+  };
+  isParagemDominada?: boolean; // True on beating Level 20
+  firstTimeClearBonus?: number;
+  failReason?: string;
+  oldLevel?: number;
+  newLevel?: number;
+  levelUp?: boolean;
+  nextLevelUnlocked?: number;
+  objectivesSummary?: {
+    description: string;
+    completed: boolean;
+    current: number;
+    target: number;
+  }[];
 }
 
 export interface FloatingText {
@@ -228,6 +257,7 @@ export interface GameSettings {
   vibrationEnabled: boolean;
   graphicsQuality: 'LOW' | 'MEDIUM' | 'HIGH';
   language: 'PT' | 'EN';
+  showFpsOverlay?: boolean;
 }
 
 export interface OffScreenTaxiIndicator {

@@ -9,9 +9,10 @@ import { soundManager } from '../utils/audio';
 
 interface SettingsModalProps {
   onClose: () => void;
+  onSettingsChange?: (newSettings: GameSettings) => void;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSettingsChange }) => {
   const [settings, setSettings] = useState<GameSettings>(loadSettings());
 
   const handleToggleSound = () => {
@@ -20,6 +21,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     soundManager.setMuted(!updated.soundEnabled);
     setSettings(updated);
     saveSettings(updated);
+    onSettingsChange?.(updated);
   };
 
   const handleToggleMusic = () => {
@@ -28,6 +30,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     soundManager.setMusicMuted(!updated.musicEnabled);
     setSettings(updated);
     saveSettings(updated);
+    onSettingsChange?.(updated);
   };
 
   const handleToggleVibration = () => {
@@ -35,6 +38,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     const updated = { ...settings, vibrationEnabled: !settings.vibrationEnabled };
     setSettings(updated);
     saveSettings(updated);
+    onSettingsChange?.(updated);
   };
 
   const handleQualitySelect = (quality: 'LOW' | 'MEDIUM' | 'HIGH') => {
@@ -42,6 +46,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     const updated = { ...settings, graphicsQuality: quality };
     setSettings(updated);
     saveSettings(updated);
+    onSettingsChange?.(updated);
+  };
+
+  const handleToggleFpsOverlay = () => {
+    soundManager.playClick();
+    const updated = { ...settings, showFpsOverlay: !settings.showFpsOverlay };
+    setSettings(updated);
+    saveSettings(updated);
+    onSettingsChange?.(updated);
   };
 
   const handleLanguageToggle = (lang: 'PT' | 'EN') => {
@@ -49,6 +62,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     const updated = { ...settings, language: lang };
     setSettings(updated);
     saveSettings(updated);
+    onSettingsChange?.(updated);
   };
 
   const isPT = settings.language === 'PT';
@@ -144,9 +158,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           </div>
 
           <div className="flex flex-col gap-1.5 bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
-            <span className="font-space font-bold text-xs text-[#161c28] uppercase">
-              {isPT ? 'Qualidade Gráfica:' : 'Graphic Quality:'}
-            </span>
+            <div className="flex justify-between items-center">
+              <span className="font-space font-bold text-xs text-[#161c28] uppercase">
+                {isPT ? 'Qualidade Gráfica:' : 'Graphic Quality:'}
+              </span>
+              <span className="font-space text-[10px] font-semibold text-slate-500">
+                {settings.graphicsQuality === 'LOW'
+                  ? isPT
+                    ? '⚡ Max Fluidez (60 FPS)'
+                    : '⚡ Max Speed (60 FPS)'
+                  : settings.graphicsQuality === 'MEDIUM'
+                  ? isPT
+                    ? '⚖️ Balanceado'
+                    : '⚖️ Balanced'
+                  : isPT
+                  ? '✨ Sombras HD'
+                  : '✨ HD Shadows'}
+              </span>
+            </div>
             <div className="grid grid-cols-3 gap-1.5">
               {(['LOW', 'MEDIUM', 'HIGH'] as const).map((q) => (
                 <button
@@ -160,6 +189,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="flex justify-between items-center bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
+            <div className="flex flex-col">
+              <span className="font-space font-bold text-xs md:text-sm text-[#161c28] flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg">monitoring</span>
+                {isPT ? 'Overlay de Desempenho' : 'Performance Overlay'}
+              </span>
+              <span className="text-[10px] text-slate-500 font-work pl-6">
+                {isPT ? 'Mostra FPS, draw calls e memória' : 'Shows FPS, draw calls and memory'}
+              </span>
+            </div>
+            <button
+              onClick={handleToggleFpsOverlay}
+              className={`px-3 py-1 rounded-xl border-2 border-[#161c28] font-space font-bold text-xs uppercase ${
+                settings.showFpsOverlay ? 'bg-[#ffd700]' : 'bg-slate-200'
+              }`}
+            >
+              {settings.showFpsOverlay ? (isPT ? 'LIGADO' : 'ON') : isPT ? 'DESLIGADO' : 'OFF'}
+            </button>
           </div>
 
           <div className="bg-[#fffbeb] border-2 border-[#fe6b00] p-3 rounded-2xl flex flex-col gap-1 hard-shadow-sm">

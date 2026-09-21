@@ -85,11 +85,17 @@ export const DEFAULT_PLAYER_STATS: PlayerStats = {
   selectedMapId: 'PARAGEM_URBANA',
   unlockedMaps: ['PARAGEM_URBANA'],
   tutorialCompleted: false,
+  highestUnlockedLevel: 1,
+  levelStars: {},
+  levelHighScores: {},
 };
 
-const isMobileOrLowEnd = typeof navigator !== 'undefined' && (
-  /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') ||
-  (typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 4)
+export const isMobileOrLowEnd = typeof navigator !== 'undefined' && (
+  /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent || '') ||
+  (typeof window !== 'undefined' && 'ontouchstart' in window && Math.min(window.screen.width, window.screen.height) < 768) ||
+  (typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 4) ||
+  (typeof (navigator as any).deviceMemory === 'number' && (navigator as any).deviceMemory <= 3) ||
+  (typeof (window as any).Capacitor !== 'undefined')
 );
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -98,6 +104,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   vibrationEnabled: true,
   graphicsQuality: 'LOW',
   language: 'PT',
+  showFpsOverlay: false,
 };
 
 export const DEFAULT_MISSIONS: Mission[] = [
@@ -221,16 +228,30 @@ export function saveSettings(settings: GameSettings) {
   }
 }
 
-// Level formulas
+// Level formulas & Titles matching LOTADOR 5 Tiers
 export function getLevelTitle(level: number): string {
-  if (level >= 50) return 'Lenda';
-  if (level >= 40) return 'Elite';
-  if (level >= 30) return 'Mestre';
-  if (level >= 20) return 'Veterano';
-  if (level >= 15) return 'Profissional';
-  if (level >= 10) return 'Experiente';
+  if (level >= 25) return 'Rei do Asfalto';
+  if (level >= 17) return 'Mestre da Paragem';
+  if (level >= 13) return 'Lotador Profissional';
+  if (level >= 9) return 'Lotador Experiente';
   if (level >= 5) return 'Lotador';
-  return 'Novato';
+  return 'Aprendiz';
+}
+
+export function getPlayerTier(level: number): { tier: string; badge: string; color: string; bg: string } {
+  if (level >= 17) {
+    return { tier: 'MESTRE DA PARAGEM', badge: '👑 MESTRE', color: '#ffd700', bg: 'bg-[#ffd700]/20' };
+  }
+  if (level >= 13) {
+    return { tier: 'LOTADOR PROFISSIONAL', badge: '💎 PROFISSIONAL', color: '#ba68c8', bg: 'bg-[#ba68c8]/20' };
+  }
+  if (level >= 9) {
+    return { tier: 'LOTADOR EXPERIENTE', badge: '🔥 EXPERIENTE', color: '#fe6b00', bg: 'bg-[#fe6b00]/20' };
+  }
+  if (level >= 5) {
+    return { tier: 'LOTADOR', badge: '🚐 LOTADOR', color: '#00b4d8', bg: 'bg-[#00b4d8]/20' };
+  }
+  return { tier: 'APRENDIZ', badge: '🌱 APRENDIZ', color: '#a3e635', bg: 'bg-[#a3e635]/20' };
 }
 
 export function getXpForNextLevel(level: number): number {
@@ -239,4 +260,41 @@ export function getXpForNextLevel(level: number): number {
 
 export function getUpgradeCost(currentLevel: number): number {
   return (currentLevel + 1) * 350;
+}
+
+/**
+ * Registra o término de uma fase no perfil do jogador e desbloqueia a fase seguinte
+ * se o jogador alcançou pelo menos 1 estrela (ou vitória no objetivo principal).
+ */
+export function recordLevelCompletion(
+  currentStats: PlayerStats,
+  levelNumber: number,
+  starsEarned: number,
+  scoreKz: number
+): { updatedStats: PlayerStats; newUnlockedLevel: boolean } {
+  const currentUnlocked = currentStats.highestUnlockedLevel || 1;
+  const nextLevel = Math.min(20, Math.max(currentUnlocked, levelNumber + (starsEarned > 0 ? 1 : 0)));
+  const newUnlockedLevel = nextLevel > currentUnlocked;
+
+  const currentStars = currentStats.levelStars?.[levelNumber] || 0;
+  const bestStars = Math.max(currentStars, starsEarned);
+
+  const currentHighScore = currentStats.levelHighScores?.[levelNumber] || 0;
+  const bestScore = Math.max(currentHighScore, scoreKz);
+
+  const updatedStats: PlayerStats = {
+    ...currentStats,
+    highestUnlockedLevel: nextLevel,
+    levelStars: {
+      ...(currentStats.levelStars || {}),
+      [levelNumber]: bestStars,
+    },
+    levelHighScores: {
+      ...(currentStats.levelHighScores || {}),
+      [levelNumber]: bestScore,
+    },
+  };
+
+  savePlayerStats(updatedStats);
+  return { updatedStats, newUnlockedLevel };
 }

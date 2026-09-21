@@ -3,8 +3,8 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { PlayerStats, MatchResults, Taxi, Passenger, PassengerDispute } from './types/game';
-import { loadPlayerStats, savePlayerStats, getXpForNextLevel, DEFAULT_MISSIONS } from './utils/storage';
+import { PlayerStats, MatchResults, Taxi, Passenger, PassengerDispute, GameSettings } from './types/game';
+import { loadPlayerStats, savePlayerStats, getXpForNextLevel, DEFAULT_MISSIONS, recordLevelCompletion, loadSettings, saveSettings } from './utils/storage';
 import { storageManager } from './services/storageService';
 import { soundManager } from './utils/audio';
 import { GameEngine } from './game/GameEngine';
@@ -17,7 +17,8 @@ import { UpgradesModal } from './components/UpgradesModal';
 import { CharacterModal } from './components/CharacterModal';
 import { MapSelectModal } from './components/MapSelectModal';
 import { LevelSelectionScreen } from './components/LevelSelectionScreen';
-import { LevelData, LevelObjective, SAMPLE_LEVELS_DATA } from './types/levelObjectives';
+import { LevelData, LevelObjective, SAMPLE_LEVELS_DATA, evaluateLevelResult } from './types/levelObjectives';
+import { ALL_LEVELS_DATA } from './data/levelsData';
 import { MissionsModal } from './components/MissionsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { HowToPlayGuide } from './components/HowToPlayGuide';
@@ -26,6 +27,7 @@ import { PWAStatusBanner } from './components/PWAStatusBanner';
 import { TutorialOverlay, TutorialStep } from './components/TutorialOverlay';
 import { useMobileLifecycle, tryLockLandscapeWeb } from './hooks/useMobileLifecycle';
 import { DiagnosticOverlay } from './components/DiagnosticOverlay';
+import { PerformanceOverlay } from './components/PerformanceOverlay';
 import { LoadingScreen } from './components/LoadingScreen';
 import { RotateDeviceOverlay } from './components/RotateDeviceOverlay';
 
@@ -34,6 +36,7 @@ type AppScreen = 'MENU' | 'GAME' | 'RESULT';
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>('MENU');
   const [stats, setStats] = useState<PlayerStats>(loadPlayerStats());
+  const [gameSettings, setGameSettings] = useState<GameSettings>(() => loadSettings());
 
   // Tutorial State
   const [isTutorial, setIsTutorial] = useState(false);
@@ -56,10 +59,16 @@ export default function App() {
   const [activeDispute, setActiveDispute] = useState<PassengerDispute | null>(null);
   const [floatingToasts, setFloatingToasts] = useState<{ id: number; text: string; color: string }[]>([]);
 
+  // Performance & Condition Tracking Refs for Current Match
+  const disputesWonRef = useRef(0);
+  const obstacleCollisionsRef = useRef(0);
+
   // Active Level & In-Game Objectives
-  const [activeLevel, setActiveLevel] = useState<LevelData>(SAMPLE_LEVELS_DATA[0]);
+  const [activeLevel, setActiveLevel] = useState<LevelData>(
+    () => ALL_LEVELS_DATA.find((l) => l.level_number === (stats.highestUnlockedLevel || 1)) || ALL_LEVELS_DATA[0]
+  );
   const [matchObjectives, setMatchObjectives] = useState<LevelObjective[]>(
-    SAMPLE_LEVELS_DATA[0].objectives
+    () => (ALL_LEVELS_DATA.find((l) => l.level_number === (stats.highestUnlockedLevel || 1)) || ALL_LEVELS_DATA[0]).objectives
   );
 
   // Results State
@@ -157,16 +166,43 @@ export default function App() {
     return () => clearInterval(timer);
   }, [screen, isPaused, activeModal, timerSeconds, isTutorial, tutorialStep]);
 
-  // Sync Taxis and Passengers for HUD overlay
+  // Sync Taxis and Passengers for HUD overlay with shallow equality guards
   useEffect(() => {
     let interval: any = null;
     if (screen === 'GAME') {
       interval = setInterval(() => {
-        if (engineRef.current) {
-          setTaxis([...engineRef.current.taxis]);
-          setPassengers([...engineRef.current.passengers]);
-        }
-      }, 300);
+        if (!engineRef.current) return;
+        const currentTaxis = engineRef.current.taxis;
+        const currentPassengers = engineRef.current.passengers;
+
+        setTaxis((prev) => {
+          if (prev.length !== currentTaxis.length) return [...currentTaxis];
+          for (let i = 0; i < prev.length; i++) {
+            if (
+              prev[i].id !== currentTaxis[i].id ||
+              prev[i].state !== currentTaxis[i].state ||
+              prev[i].currentPassengers !== currentTaxis[i].currentPassengers
+            ) {
+              return [...currentTaxis];
+            }
+          }
+          return prev;
+        });
+
+        setPassengers((prev) => {
+          if (prev.length !== currentPassengers.length) return [...currentPassengers];
+          for (let i = 0; i < prev.length; i++) {
+            if (
+              prev[i].id !== currentPassengers[i].id ||
+              prev[i].state !== currentPassengers[i].state ||
+              prev[i].followedBy !== currentPassengers[i].followedBy
+            ) {
+              return [...currentPassengers];
+            }
+          }
+          return prev;
+        });
+      }, 350);
     }
     return () => clearInterval(interval);
   }, [screen]);
@@ -178,6 +214,9 @@ export default function App() {
     const runTutorial = forceTutorial || (!stats.tutorialCompleted && stats.level === 1);
     setIsTutorial(runTutorial);
     setTutorialStep(TutorialStep.INTRO);
+
+    disputesWonRef.current = 0;
+    obstacleCollisionsRef.current = 0;
 
     setMatchKz(0);
     setMatchXp(0);
@@ -311,10 +350,55 @@ export default function App() {
                 });
               }
             },
+            onDisputeWon: () => {
+              disputesWonRef.current++;
+              setMatchObjectives((prev) =>
+                prev.map((obj) =>
+                  obj.type === 'BEAT_RIVAL'
+                    ? {
+                        ...obj,
+                        current_value: disputesWonRef.current,
+                        completed: disputesWonRef.current >= obj.target_value,
+                      }
+                    : obj
+                )
+              );
+            },
+            onObstacleCollision: (type) => {
+              obstacleCollisionsRef.current++;
+              setMatchObjectives((prev) =>
+                prev.map((obj) =>
+                  obj.type === 'NO_COLLISIONS'
+                    ? {
+                        ...obj,
+                        current_value: obstacleCollisionsRef.current,
+                        completed: false,
+                      }
+                    : obj
+                )
+              );
+            },
+            onFullCapacityTrip: (taxi) => {
+              setMatchObjectives((prev) =>
+                prev.map((obj) =>
+                  obj.type === 'FULL_CAPACITY_TRIPS'
+                    ? {
+                        ...obj,
+                        current_value: obj.current_value + 1,
+                        completed: obj.current_value + 1 >= obj.target_value,
+                      }
+                    : obj
+                )
+              );
+            },
             onPlayerRunStart: () => {},
           },
-          { isTutorial: runTutorial }
+          { isTutorial: runTutorial, levelConfig: activeLevel }
         );
+
+        if (engineRef.current && gameSettings.graphicsQuality) {
+          engineRef.current.setGraphicsQuality(gameSettings.graphicsQuality);
+        }
       }
     }, 100);
   };
@@ -322,20 +406,57 @@ export default function App() {
   const endMatch = (victoryParam?: boolean) => {
     if (engineRef.current) {
       const engine = engineRef.current;
+      const duration = Math.max(1, (activeLevel.time_limit_seconds || 180) - timerSeconds);
       const isNewRecord = engine.matchKz > stats.bestScore;
-      const isVictory =
-        victoryParam !== undefined
-          ? victoryParam
-          : isTutorial
-          ? engine.passengersServedCount >= 2 || engine.taxisLoadedCount >= 1
-          : true;
 
-      // Update Player Stats & Level Up Logic
-      let newMoney = stats.money + engine.matchKz;
-      let newXp = stats.xp + engine.matchXp;
-      let newLevel = stats.level;
-      let newTaxisLoaded = stats.taxisLoaded + engine.taxisLoadedCount;
-      let newPassengers = stats.passengersServed + engine.passengersServedCount;
+      // Evaluate level completion and star requirements
+      const evalResult = isTutorial
+        ? {
+            isVictory:
+              victoryParam !== undefined
+                ? victoryParam
+                : engine.passengersServedCount >= 2 || engine.taxisLoadedCount >= 1,
+            stars: 1,
+            starsBreakdown: { star1: true, star2: false, star3: false },
+            isParagemDominada: false,
+            firstTimeClearBonus: 500,
+            bonusKz: 0,
+            bonusXp: 0,
+            failReason: undefined,
+          }
+        : evaluateLevelResult(
+            activeLevel,
+            engine.matchKz,
+            engine.passengersServedCount,
+            engine.taxisLoadedCount,
+            duration,
+            disputesWonRef.current,
+            obstacleCollisionsRef.current
+          );
+
+      const isVictory = evalResult.isVictory;
+      const totalEarnedKz = engine.matchKz + (isVictory ? evalResult.bonusKz : 0);
+      const totalEarnedXp = engine.matchXp + (isVictory ? evalResult.bonusXp : 0);
+
+      // Record level completion in progression storage
+      let updatedStats = { ...stats };
+      if (isVictory && !isTutorial) {
+        const recordResult = recordLevelCompletion(
+          stats,
+          activeLevel.level_number,
+          evalResult.stars,
+          engine.matchKz
+        );
+        updatedStats = recordResult.updatedStats;
+      }
+
+      // Update basic player wallet and XP
+      let newMoney = updatedStats.money + totalEarnedKz;
+      let newXp = updatedStats.xp + totalEarnedXp;
+      let oldLevel = updatedStats.level;
+      let newLevel = updatedStats.level;
+      let newTaxisLoaded = updatedStats.taxisLoaded + engine.taxisLoadedCount;
+      let newPassengers = updatedStats.passengersServed + engine.passengersServedCount;
 
       // Level up checks
       let reqXp = getXpForNextLevel(newLevel);
@@ -345,16 +466,16 @@ export default function App() {
         reqXp = getXpForNextLevel(newLevel);
       }
 
-      const updatedStats: PlayerStats = {
-        ...stats,
+      updatedStats = {
+        ...updatedStats,
         money: newMoney,
         xp: newXp,
         level: newLevel,
-        bestScore: Math.max(stats.bestScore, engine.matchKz),
+        bestScore: Math.max(updatedStats.bestScore, engine.matchKz),
         taxisLoaded: newTaxisLoaded,
         passengersServed: newPassengers,
-        maxCombo: Math.max(stats.maxCombo, engine.combo),
-        tutorialCompleted: isTutorial && isVictory ? true : stats.tutorialCompleted,
+        maxCombo: Math.max(updatedStats.maxCombo, engine.combo),
+        tutorialCompleted: isTutorial && isVictory ? true : updatedStats.tutorialCompleted,
       };
 
       savePlayerStats(updatedStats);
@@ -365,10 +486,10 @@ export default function App() {
           id: `match_${Date.now()}`,
           timestamp: Date.now(),
           score: engine.matchKz,
-          moneyEarned: engine.matchKz,
+          moneyEarned: totalEarnedKz,
           taxisLoaded: engine.taxisLoadedCount,
           passengersServed: engine.passengersServedCount,
-          zoneId: stats.selectedMapId || 'paragem_central',
+          zoneId: activeLevel.chapter_id || stats.selectedMapId || 'cazenga',
           maxCombo: engine.combo,
         },
         updatedStats
@@ -378,12 +499,24 @@ export default function App() {
         taxisLoaded: engine.taxisLoadedCount,
         passengersServed: engine.passengersServedCount,
         maxCombo: engine.combo,
-        earnedMoney: engine.matchKz,
-        earnedXp: engine.matchXp,
+        earnedMoney: totalEarnedKz,
+        earnedXp: totalEarnedXp,
         isNewRecord,
-        duration: 180 - timerSeconds,
+        duration,
         isTutorial,
         isVictory,
+        levelId: activeLevel.level_number,
+        levelNumber: activeLevel.level_number,
+        levelTitle: activeLevel.level_title,
+        zoneName: activeLevel.chapter_name,
+        starsEarned: evalResult.stars,
+        starsBreakdown: evalResult.starsBreakdown,
+        isParagemDominada: evalResult.isParagemDominada,
+        firstTimeClearBonus: evalResult.firstTimeClearBonus,
+        failReason: evalResult.failReason,
+        oldLevel,
+        newLevel,
+        levelUp: newLevel > oldLevel,
       };
 
       setMatchResults(res);
@@ -537,6 +670,21 @@ export default function App() {
           results={matchResults}
           onPlayAgain={() => startMatch(isTutorial)}
           onContinue={() => setScreen('MENU')}
+          onNextLevel={() => {
+            const nextLvl = ALL_LEVELS_DATA.find(
+              (l) => l.level_number === (matchResults.levelNumber || 1) + 1
+            );
+            if (nextLvl) {
+              setActiveLevel(nextLvl);
+              startMatch(false);
+            } else {
+              setScreen('MENU');
+            }
+          }}
+          onOpenLevelMap={() => {
+            setScreen('MENU');
+            setActiveModal('MAPS');
+          }}
         />
       )}
 
@@ -565,6 +713,13 @@ export default function App() {
       {activeModal === 'MAPS' && (
         <div className="absolute inset-0 z-50">
           <LevelSelectionScreen
+            levels={ALL_LEVELS_DATA.map((lvl) => ({
+              ...lvl,
+              unlocked: (stats.highestUnlockedLevel || 1) >= lvl.level_number,
+              stars_earned: stats.levelStars?.[lvl.level_number] || 0,
+              high_score: stats.levelHighScores?.[lvl.level_number] || 0,
+              paragem_dominada: (stats.levelStars?.[lvl.level_number] || 0) === 3,
+            }))}
             onSelectAndPlayLevel={(lvl) => {
               setActiveLevel(lvl);
               setActiveModal(null);
@@ -584,7 +739,15 @@ export default function App() {
       )}
 
       {activeModal === 'SETTINGS' && (
-        <SettingsModal onClose={() => setActiveModal(null)} />
+        <SettingsModal
+          onClose={() => setActiveModal(null)}
+          onSettingsChange={(newSettings) => {
+            setGameSettings(newSettings);
+            if (engineRef.current) {
+              engineRef.current.setGraphicsQuality(newSettings.graphicsQuality);
+            }
+          }}
+        />
       )}
 
       {activeModal === 'GUIDE' && (
@@ -600,7 +763,19 @@ export default function App() {
       {/* PWA Offline / Update / Install Status Banner */}
       <PWAStatusBanner />
 
-      {/* Dev-Only Performance & Telemetry Diagnostics */}
+      {/* Runtime Performance Diagnostics & Quality Selector */}
+      {gameSettings.showFpsOverlay && (
+        <PerformanceOverlay
+          engine={engineRef.current}
+          onQualityChange={(q) => {
+            const updated = { ...gameSettings, graphicsQuality: q };
+            setGameSettings(updated);
+            saveSettings(updated);
+          }}
+        />
+      )}
+
+      {/* Dev-Only Storage & Network Telemetry Diagnostics */}
       <DiagnosticOverlay
         fps={engineRef.current?.getFps() || 60}
         entityCount={

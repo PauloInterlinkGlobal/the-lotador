@@ -645,13 +645,19 @@ export class BuildingManager {
     startX = -28,
     endX = 28,
     stepX = 7.6,
-    zPos = 12.0
+    zPos = 12.0,
+    quality: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM'
   ): THREE.Group[] {
     const groups: THREE.Group[] = [];
     const presets = this.ESTABLISHMENTS;
     let idx = 0;
 
-    for (let x = startX; x <= endX; x += stepX) {
+    // Mobile / LOW optimization: fewer buildings spaced out to reduce draw calls
+    const actualStartX = quality === 'LOW' ? -22 : startX;
+    const actualEndX = quality === 'LOW' ? 22 : endX;
+    const actualStepX = quality === 'LOW' ? 11.0 : stepX;
+
+    for (let x = actualStartX; x <= actualEndX; x += actualStepX) {
       const preset = presets[idx % presets.length];
       const seed = Math.abs(Math.round(x * 17.3 + idx * 43.1 + 1000));
       idx++;
@@ -664,7 +670,7 @@ export class BuildingManager {
         zPos
       );
 
-      groups.push(this.createBuildingMeshGroup(buildingData, zPos));
+      groups.push(this.createBuildingMeshGroup(buildingData, zPos, quality));
     }
 
     return groups;
@@ -674,8 +680,31 @@ export class BuildingManager {
    * Generates the lateral urban wings (Left: x < -28, Right: x > 28)
    * flanking the paragem to create a deep, continuous streetscape.
    */
-  public static generateLateralStreets(): THREE.Group[] {
+  public static generateLateralStreets(quality: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM'): THREE.Group[] {
     const groups: THREE.Group[] = [];
+
+    // LOW quality mode: replace 8 complex lateral buildings with 2 simple low-poly backdrop blocks
+    if (quality === 'LOW') {
+      const leftWing = new THREE.Group();
+      leftWing.name = 'lateral_wing_left_low';
+      const bGeoL = new THREE.BoxGeometry(14, 7.5, 10);
+      const bMatL = this.getWallMaterial(0x705d00);
+      const meshL = new THREE.Mesh(bGeoL, bMatL);
+      meshL.position.set(-36, 3.75, 6);
+      leftWing.add(meshL);
+      groups.push(leftWing);
+
+      const rightWing = new THREE.Group();
+      rightWing.name = 'lateral_wing_right_low';
+      const bGeoR = new THREE.BoxGeometry(14, 8.0, 10);
+      const bMatR = this.getWallMaterial(0x006399);
+      const meshR = new THREE.Mesh(bGeoR, bMatR);
+      meshR.position.set(36, 4.0, 6);
+      rightWing.add(meshR);
+      groups.push(rightWing);
+
+      return groups;
+    }
 
     // Left Street Wing (Oficina, Armazém, Cantina de Esquina, Mercado)
     const leftConfigs: { presetIdx: number; x: number; z: number; rotY: number }[] = [
@@ -696,7 +725,7 @@ export class BuildingManager {
         cfg.z,
         cfg.rotY
       );
-      groups.push(this.createBuildingMeshGroup(data, cfg.z));
+      groups.push(this.createBuildingMeshGroup(data, cfg.z, quality));
     });
 
     // Right Street Wing (Multicaixa, Farmácia 24h, Barbearia, Padaria, Loja Telemóveis)
@@ -718,7 +747,7 @@ export class BuildingManager {
         cfg.z,
         cfg.rotY
       );
-      groups.push(this.createBuildingMeshGroup(data, cfg.z));
+      groups.push(this.createBuildingMeshGroup(data, cfg.z, quality));
     });
 
     return groups;
@@ -728,14 +757,29 @@ export class BuildingManager {
    * Generates a distant skyline layer (z = 20) with residential buildings and houses.
    * Gives deep Luanda horizon perspective without cluttering the foreground or impacting performance.
    */
-  public static generateDistantSkyline(): THREE.Group {
+  public static generateDistantSkyline(quality: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM'): THREE.Group {
     const skylineGroup = new THREE.Group();
     skylineGroup.name = 'distant_urban_skyline';
 
     const houseColors = [0xdf8453, 0xfacc15, 0x38bdf8, 0x4ade80, 0xf87171, 0xa78bfa];
-    const roofColors = [0x78350f, 0x991b1b, 0x334155, 0x1e293b];
-
     const houseMats = houseColors.map((c) => this.getWallMaterial(c));
+
+    // LOW quality mode: fewer buildings, no cone roofs, no water tanks
+    if (quality === 'LOW') {
+      for (let x = -36; x <= 36; x += 12) {
+        const h = 6.0 + Math.abs(Math.sin(x * 0.3)) * 4.0;
+        const bodyGeo = new THREE.BoxGeometry(9.0, h, 4.0);
+        const bodyMat = houseMats[Math.abs(Math.round(x)) % houseMats.length];
+        const bMesh = new THREE.Mesh(bodyGeo, bodyMat);
+        bMesh.position.set(x, h / 2, 20.0);
+        bMesh.castShadow = false;
+        bMesh.receiveShadow = false;
+        skylineGroup.add(bMesh);
+      }
+      return skylineGroup;
+    }
+
+    const roofColors = [0x78350f, 0x991b1b, 0x334155, 0x1e293b];
     const roofMats = roofColors.map((c) => this.getWallMaterial(c));
     const tankMat = this.getWallMaterial(0x0284c7);
     const tankGeo = new THREE.CylinderGeometry(0.5, 0.5, 1.0, 8);
@@ -794,8 +838,19 @@ export class BuildingManager {
    * - Placas de trânsito angolanas com direções de bairros (Luanda, Viana, Talatona, Kilamba)
    * - Bancas de venda com sombrinhas coloridas (zungueiras)
    */
-  public static generateUrbanProps(): THREE.Group[] {
+  public static generateUrbanProps(quality: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM'): THREE.Group[] {
     const props: THREE.Group[] = [];
+
+    // LOW quality mode: essential props only (2 lamps, 1 sign, 1 stall)
+    if (quality === 'LOW') {
+      [-16, 16].forEach((x) => {
+        props.push(this.createStreetLamp(x, 0.4, 9.2));
+      });
+      props.push(this.createAngolaDirectionSign(-24, 0.4, 2.5));
+      props.push(this.createMulticaixaTotem(15.5, 0.4, 8.6));
+      props.push(this.createStreetFruitStall(0, 0.4, 8.6));
+      return props;
+    }
 
     // 1. Street Lamp Posts (Postes de iluminação pública) along sidewalk (z = 9.2)
     [-24, -14, -2, 10, 22].forEach((x) => {
@@ -846,7 +901,11 @@ export class BuildingManager {
    * - Rooftop props (water tank, satellite dish)
    * - Lateral detail props (barber pole, pharmacy cross, etc.)
    */
-  public static createBuildingMeshGroup(data: BuildingData, zPos: number): THREE.Group {
+  public static createBuildingMeshGroup(
+    data: BuildingData,
+    zPos: number,
+    quality: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM'
+  ): THREE.Group {
     const group = new THREE.Group();
     group.name = data.id;
 
@@ -860,7 +919,7 @@ export class BuildingManager {
     const roofTopMat = this.sharedRoofTopMat;
     const floorBottomMat = this.sharedFloorBottomMat;
 
-    const frontFacadeTex = this.getBuildingFacadeTexture(data);
+    const frontFacadeTex = this.getBuildingFacadeTexture(data, quality);
     const frontFacadeMat = new THREE.MeshLambertMaterial({ map: frontFacadeTex });
 
     const materials: THREE.Material[] = [
@@ -875,8 +934,19 @@ export class BuildingManager {
     const buildingMesh = new THREE.Mesh(bGeo, materials);
     buildingMesh.position.set(0, yCenter, 0);
     buildingMesh.castShadow = false;
-    buildingMesh.receiveShadow = true;
+    buildingMesh.receiveShadow = quality !== 'LOW';
     group.add(buildingMesh);
+
+    // IN LOW QUALITY MODE:
+    // Facade canvas already renders the storefront, awning, door, windows, and sign!
+    // Skip all additional 3D child meshes to save 300+ draw calls and polygon load.
+    if (quality === 'LOW') {
+      group.position.set(data.x, 0, zPos);
+      if (data.rotationY) {
+        group.rotation.y = data.rotationY;
+      }
+      return group;
+    }
 
     // 2. Connecting Apron Pavement Slab (smooth low-poly transition to paragem)
     const apron = this.createConnectingApron(width, depth);
@@ -908,11 +978,20 @@ export class BuildingManager {
       group.add(awning3D);
     }
 
-    // 6. Rooftop Props
+    // In MEDIUM quality: keep awning & roof, skip minor props
+    if (quality === 'MEDIUM') {
+      group.position.set(data.x, 0, zPos);
+      if (data.rotationY) {
+        group.rotation.y = data.rotationY;
+      }
+      return group;
+    }
+
+    // 6. Rooftop Props (HIGH only)
     const roofProps = this.createRooftopProps(data, height + 0.8);
     group.add(roofProps);
 
-    // 7. Vertical Blade Signs ("Placas em bandeira")
+    // 7. Vertical Blade Signs ("Placas em bandeira") (HIGH only)
     if (data.hasVerticalSign && data.verticalSignText) {
       const vSign = this.createVerticalBladeSign(
         data.verticalSignText,
@@ -924,7 +1003,7 @@ export class BuildingManager {
       group.add(vSign);
     }
 
-    // 8. Facade Exterior Lights (Luminárias de parede)
+    // 8. Facade Exterior Lights (Luminárias de parede) (HIGH only)
     if (data.hasFacadeLights) {
       const lampL = this.createFacadeWallLamp();
       lampL.position.set(-width * 0.3, 3.9, -depth / 2 - 0.1);
@@ -935,7 +1014,7 @@ export class BuildingManager {
       group.add(lampR);
     }
 
-    // 9. Front Commercial & Street Props (Bancas, caixotes, vasos, tambores)
+    // 9. Front Commercial & Street Props (Bancas, caixotes, vasos, tambores) (HIGH only)
     if (data.frontProp && data.frontProp !== 'none') {
       const frontPropMesh = this.createFrontProp(data.frontProp, width, depth, data.instanceSeed || 0);
       if (frontPropMesh) {
@@ -943,7 +1022,7 @@ export class BuildingManager {
       }
     }
 
-    // 10. Special Exterior 3D Props (Barber pole, pharmacy 3D cross, etc.)
+    // 10. Special Exterior 3D Props (Barber pole, pharmacy 3D cross, etc.) (HIGH only)
     if (data.customDetails?.hasBarberPole) {
       const pole = this.create3DBarberPole();
       pole.position.set(width * 0.44, 2.5, -depth / 2 - 0.2);
@@ -969,15 +1048,28 @@ export class BuildingManager {
   // 4. TEXTURE CACHING & MASTER CANVAS DRAWING
   // =========================================================================
 
-  public static getBuildingFacadeTexture(data: BuildingData): THREE.CanvasTexture {
-    const cacheKey = `${data.type}_${data.id}_${data.wallPattern || 'plain'}_${data.doorType}_${data.instanceSeed || 0}`;
+  public static getBuildingFacadeTexture(
+    data: BuildingData,
+    quality: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM'
+  ): THREE.CanvasTexture {
+    // Archetype-based caching to share identical textures across buildings
+    const cacheKey = `${data.type}_${data.wallPattern || 'plain'}_${data.doorType}_${data.awningStyle}_${quality}`;
     if (this.textureCache.has(cacheKey)) {
       return this.textureCache.get(cacheKey)!;
     }
 
     const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 768;
+    if (quality === 'LOW') {
+      canvas.width = 256;
+      canvas.height = 384;
+    } else if (quality === 'MEDIUM') {
+      canvas.width = 384;
+      canvas.height = 576;
+    } else {
+      canvas.width = 512;
+      canvas.height = 768;
+    }
+
     const ctx = canvas.getContext('2d');
 
     if (ctx) {
@@ -986,9 +1078,16 @@ export class BuildingManager {
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.generateMipmaps = true;
+    if (quality === 'HIGH') {
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = true;
+    } else {
+      // Avoid expensive mipmap generation on mobile devices
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = false;
+    }
 
     this.textureCache.set(cacheKey, texture);
     return texture;
