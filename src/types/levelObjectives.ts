@@ -7,11 +7,17 @@ import { ALL_LEVELS_DATA } from '../data/levelsData';
 
 export type ObjectiveType =
   | 'PASSENGERS_DELIVERED'
+  | 'LOAD_PASSENGERS'
   | 'SPECIFIC_DESTINATION'
   | 'MONEY_EARNED'
+  | 'EARN_KZ'
   | 'FULL_CAPACITY_TRIPS'
   | 'BEAT_RIVAL'
-  | 'NO_COLLISIONS';
+  | 'NO_COLLISIONS'
+  | 'NO_CRASHES'
+  | 'FINISH_UNDER_TIME'
+  | 'USE_SPRINT'
+  | 'COMBO';
 
 export interface LevelObjective {
   type: ObjectiveType;
@@ -127,6 +133,7 @@ export const SAMPLE_LEVELS_DATA: LevelData[] = ALL_LEVELS_DATA;
 export function getObjectiveVisuals(type: ObjectiveType) {
   switch (type) {
     case 'PASSENGERS_DELIVERED':
+    case 'LOAD_PASSENGERS':
       return {
         icon: 'person',
         emoji: '🧍',
@@ -145,6 +152,7 @@ export function getObjectiveVisuals(type: ObjectiveType) {
         textColor: 'text-[#4caf50]',
       };
     case 'MONEY_EARNED':
+    case 'EARN_KZ':
       return {
         icon: 'payments',
         emoji: '💰',
@@ -172,6 +180,7 @@ export function getObjectiveVisuals(type: ObjectiveType) {
         textColor: 'text-[#ff5252]',
       };
     case 'NO_COLLISIONS':
+    case 'NO_CRASHES':
       return {
         icon: 'shield',
         emoji: '🛡️',
@@ -179,6 +188,33 @@ export function getObjectiveVisuals(type: ObjectiveType) {
         color: '#b388ff',
         badgeBg: 'bg-[#b388ff]/20',
         textColor: 'text-[#b388ff]',
+      };
+    case 'FINISH_UNDER_TIME':
+      return {
+        icon: 'schedule',
+        emoji: '⏱️',
+        label: 'Tempo Rápido',
+        color: '#ff7043',
+        badgeBg: 'bg-[#ff7043]/20',
+        textColor: 'text-[#ff7043]',
+      };
+    case 'USE_SPRINT':
+      return {
+        icon: 'bolt',
+        emoji: '⚡',
+        label: 'Correr',
+        color: '#00e5ff',
+        badgeBg: 'bg-[#00e5ff]/20',
+        textColor: 'text-[#00e5ff]',
+      };
+    case 'COMBO':
+      return {
+        icon: 'local_fire_department',
+        emoji: '🔥',
+        label: 'Combo',
+        color: '#fe6b00',
+        badgeBg: 'bg-[#fe6b00]/20',
+        textColor: 'text-[#fe6b00]',
       };
   }
 }
@@ -205,18 +241,20 @@ export function evaluateLevelResult(
   taxisLoaded: number,
   durationSeconds: number,
   disputesWon: number = 0,
-  obstacleCollisions: number = 0
+  obstacleCollisions: number = 0,
+  sprintCount: number = 0,
+  maxCombo: number = 1
 ): LevelEvaluation {
   let primaryPassed = true;
   let primaryReason = '';
 
   for (const obj of level.objectives) {
-    if (obj.type === 'PASSENGERS_DELIVERED') {
+    if (obj.type === 'PASSENGERS_DELIVERED' || obj.type === 'LOAD_PASSENGERS') {
       if (passengersServed < obj.target_value) {
         primaryPassed = false;
         primaryReason = `Entregaste ${passengersServed}/${obj.target_value} passageiros`;
       }
-    } else if (obj.type === 'MONEY_EARNED') {
+    } else if (obj.type === 'MONEY_EARNED' || obj.type === 'EARN_KZ') {
       if (earnedKz < obj.target_value) {
         primaryPassed = false;
         primaryReason = `Arrecadaste ${earnedKz}/${obj.target_value} Kz`;
@@ -231,10 +269,25 @@ export function evaluateLevelResult(
         primaryPassed = false;
         primaryReason = `Venceste ${disputesWon}/${obj.target_value} disputas com o rival`;
       }
-    } else if (obj.type === 'NO_COLLISIONS') {
+    } else if (obj.type === 'NO_COLLISIONS' || obj.type === 'NO_CRASHES') {
       if (obstacleCollisions > 0) {
         primaryPassed = false;
-        primaryReason = `Tiveste ${obstacleCollisions} colisões com vendedores ou fiscal`;
+        primaryReason = `Tiveste ${obstacleCollisions} batidas com vendedores ou fiscais`;
+      }
+    } else if (obj.type === 'FINISH_UNDER_TIME') {
+      if (durationSeconds > obj.target_value) {
+        primaryPassed = false;
+        primaryReason = `Demoraste ${durationSeconds}s (meta era menos de ${obj.target_value}s)`;
+      }
+    } else if (obj.type === 'USE_SPRINT') {
+      if (sprintCount < obj.target_value) {
+        primaryPassed = false;
+        primaryReason = `Usaste o sprint ${sprintCount}/${obj.target_value} vezes`;
+      }
+    } else if (obj.type === 'COMBO') {
+      if (maxCombo < obj.target_value) {
+        primaryPassed = false;
+        primaryReason = `Alcançaste combo x${maxCombo} (meta era x${obj.target_value})`;
       }
     }
   }
@@ -244,17 +297,17 @@ export function evaluateLevelResult(
 
   // Star 2: Good performance & bonus threshold
   let star2 = false;
+  const timeRemaining = (level.time_limit_seconds || 60) - durationSeconds;
   if (star1) {
-    const timeRemaining = (level.time_limit_seconds || 60) - durationSeconds;
-    if (timeRemaining >= 10 || earnedKz >= (level.reward_kz || 500) * 0.6 || disputesWon >= 1 || taxisLoaded >= 2) {
+    if (timeRemaining >= 15 || earnedKz >= (level.reward_kz || 500) * 0.6 || taxisLoaded >= 2) {
       star2 = true;
     }
   }
 
-  // Star 3: Mastery / Paragem Dominada
+  // Star 3: Mastery / Paragem Dominada (fast time and no crashes)
   let star3 = false;
   if (star1 && star2) {
-    if (obstacleCollisions === 0 || durationSeconds <= (level.time_limit_seconds || 60) * 0.75) {
+    if (obstacleCollisions === 0 && (timeRemaining >= 25 || durationSeconds <= (level.time_limit_seconds || 60) * 0.75)) {
       star3 = true;
     }
   }
@@ -281,6 +334,6 @@ export function evaluateLevelResult(
     firstTimeClearBonus: star1 ? baseRewardKz : 0,
     bonusKz,
     bonusXp,
-    failReason: star1 ? undefined : (primaryReason || 'Tempo esgotado antes de atingir as metas'),
+    failReason: star1 ? undefined : (primaryReason || 'Tempo esgotado antes de atingir as metas da fase'),
   };
 }

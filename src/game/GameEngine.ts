@@ -1546,11 +1546,12 @@ export class GameEngine {
     slot.occupied = true;
     slot.taxiId = id;
 
+    const extraCap = Math.min(4, this.playerStats.upgradeTaxiCapacity || 0);
     const taxi: Taxi = {
       id,
       type: 'NORMAL',
       route,
-      capacity: 4,
+      capacity: 4 + extraCap,
       currentPassengers: 0,
       maxWaitTime: 90,
       remainingWaitTime: 90,
@@ -2905,6 +2906,7 @@ export class GameEngine {
   }
 
   private updateTaxis(delta: number) {
+    const taxiSpeedMult = 1 + (this.playerStats.upgradeTaxiSpeed || 0) * 0.08;
     this.taxis.forEach((t) => {
       const vanMesh = this.taxiMeshes.get(t.id);
       if (!vanMesh) return;
@@ -2914,14 +2916,14 @@ export class GameEngine {
       if (t.state === 'ARRIVING') {
         // Drive in from right to slot position
         if (t.position.x > slot.x) {
-          t.position.x -= 12 * delta;
+          t.position.x -= 12 * taxiSpeedMult * delta;
         } else {
           t.position.x = slot.x;
           t.state = 'WAITING';
         }
       } else if (t.state === 'DEPARTING') {
         // Drive off to left
-        t.position.x -= 16 * delta;
+        t.position.x -= 16 * taxiSpeedMult * delta;
         if (t.position.x < -32) {
           t.state = 'GONE';
           slot.occupied = false;

@@ -18,7 +18,8 @@ import { CharacterModal } from './components/CharacterModal';
 import { MapSelectModal } from './components/MapSelectModal';
 import { LevelSelectionScreen } from './components/LevelSelectionScreen';
 import { LevelData, LevelObjective, SAMPLE_LEVELS_DATA, evaluateLevelResult } from './types/levelObjectives';
-import { ALL_LEVELS_DATA } from './data/levelsData';
+import { ALL_LEVELS_DATA, getLevelConfig, toLevelData } from './data/levels';
+import { LevelStartBanner } from './components/LevelStartBanner';
 import { MissionsModal } from './components/MissionsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { HowToPlayGuide } from './components/HowToPlayGuide';
@@ -62,6 +63,9 @@ export default function App() {
   // Performance & Condition Tracking Refs for Current Match
   const disputesWonRef = useRef(0);
   const obstacleCollisionsRef = useRef(0);
+  const sprintCountRef = useRef(0);
+  const hasWonMatchRef = useRef(false);
+  const [showLevelBanner, setShowLevelBanner] = useState(false);
 
   // Active Level & In-Game Objectives
   const [activeLevel, setActiveLevel] = useState<LevelData>(
@@ -226,6 +230,32 @@ export default function App() {
     return () => clearInterval(interval);
   }, [screen]);
 
+  const endMatchRef = useRef<(victoryParam?: boolean) => void>(() => {});
+
+  const updateObjectivesAndCheckVictory = useCallback(
+    (updater: (prev: LevelObjective[]) => LevelObjective[]) => {
+      setMatchObjectives((prev) => {
+        const next = updater(prev);
+        const allCompleted = next.length > 0 && next.every((obj) => obj.completed);
+        if (allCompleted && !hasWonMatchRef.current && !isTutorial) {
+          hasWonMatchRef.current = true;
+          setTimeout(() => {
+            endMatchRef.current(true);
+          }, 800);
+        }
+        return next;
+      });
+    },
+    [isTutorial]
+  );
+
+  const handleTutorialStepChange = useCallback((nextStep: TutorialStep) => {
+    setTutorialStep(nextStep);
+    if (engineRef.current) {
+      engineRef.current.isPaused = nextStep === TutorialStep.INTRO;
+    }
+  }, []);
+
   const startMatch = async (forceTutorial = false, levelToPlay?: LevelData) => {
     soundManager.playClick();
     tryLockLandscapeWeb();
@@ -249,6 +279,9 @@ export default function App() {
 
     disputesWonRef.current = 0;
     obstacleCollisionsRef.current = 0;
+    sprintCountRef.current = 0;
+    hasWonMatchRef.current = false;
+    setShowLevelBanner(!runTutorial);
 
     setMatchKz(0);
     setMatchXp(0);
@@ -301,25 +334,33 @@ export default function App() {
               setMatchKz(kz);
               setMatchXp(xp);
               setMatchCombo(combo);
-              setMatchObjectives((prev) =>
-                prev.map((obj) =>
-                  obj.type === 'MONEY_EARNED'
-                    ? {
-                        ...obj,
-                        current_value: kz,
-                        completed: kz >= obj.target_value,
-                      }
-                    : obj
-                )
+              updateObjectivesAndCheckVictory((prev) =>
+                prev.map((obj) => {
+                  if (obj.type === 'MONEY_EARNED' || obj.type === 'EARN_KZ') {
+                    return {
+                      ...obj,
+                      current_value: kz,
+                      completed: kz >= obj.target_value,
+                    };
+                  }
+                  if (obj.type === 'COMBO') {
+                    return {
+                      ...obj,
+                      current_value: Math.max(obj.current_value, combo),
+                      completed: Math.max(obj.current_value, combo) >= obj.target_value,
+                    };
+                  }
+                  return obj;
+                })
               );
             },
-            onTaxiLoaded: (taxi, reward, xp) => {
+            onTaxiLoaded: (_taxi, _reward, _xp) => {
               setTaxisLoaded((prev) => prev + 1);
               // Check for rush hour condition
               if (engineRef.current && engineRef.current.taxisLoadedCount >= 5 && !engineRef.current.isRushHour) {
                 engineRef.current.toggleRushHour(true);
               }
-              setMatchObjectives((prev) =>
+              updateObjectivesAndCheckVictory((prev) =>
                 prev.map((obj) =>
                   obj.type === 'FULL_CAPACITY_TRIPS'
                     ? {
@@ -366,9 +407,9 @@ export default function App() {
             },
             onPassengerBoarded: () => {
               setPassengersServed((prev) => prev + 1);
-              setMatchObjectives((prev) =>
+              updateObjectivesAndCheckVictory((prev) =>
                 prev.map((obj) =>
-                  obj.type === 'PASSENGERS_DELIVERED'
+                  obj.type === 'PASSENGERS_DELIVERED' || obj.type === 'LOAD_PASSENGERS'
                     ? {
                         ...obj,
                         current_value: obj.current_value + 1,
@@ -388,7 +429,7 @@ export default function App() {
             },
             onDisputeWon: () => {
               disputesWonRef.current++;
-              setMatchObjectives((prev) =>
+              updateObjectivesAndCheckVictory((prev) =>
                 prev.map((obj) =>
                   obj.type === 'BEAT_RIVAL'
                     ? {
@@ -400,11 +441,11 @@ export default function App() {
                 )
               );
             },
-            onObstacleCollision: (type) => {
+            onObstacleCollision: () => {
               obstacleCollisionsRef.current++;
-              setMatchObjectives((prev) =>
+              updateObjectivesAndCheckVictory((prev) =>
                 prev.map((obj) =>
-                  obj.type === 'NO_COLLISIONS'
+                  obj.type === 'NO_COLLISIONS' || obj.type === 'NO_CRASHES'
                     ? {
                         ...obj,
                         current_value: obstacleCollisionsRef.current,
@@ -414,8 +455,8 @@ export default function App() {
                 )
               );
             },
-            onFullCapacityTrip: (taxi) => {
-              setMatchObjectives((prev) =>
+            onFullCapacityTrip: () => {
+              updateObjectivesAndCheckVictory((prev) =>
                 prev.map((obj) =>
                   obj.type === 'FULL_CAPACITY_TRIPS'
                     ? {
@@ -427,7 +468,20 @@ export default function App() {
                 )
               );
             },
-            onPlayerRunStart: () => {},
+            onPlayerRunStart: () => {
+              sprintCountRef.current++;
+              updateObjectivesAndCheckVictory((prev) =>
+                prev.map((obj) =>
+                  obj.type === 'USE_SPRINT'
+                    ? {
+                        ...obj,
+                        current_value: sprintCountRef.current,
+                        completed: sprintCountRef.current >= obj.target_value,
+                      }
+                    : obj
+                )
+              );
+            },
           },
           { isTutorial: runTutorial, levelConfig: selectedLevel }
         );
@@ -435,8 +489,9 @@ export default function App() {
         engineRef.current = engine;
         setEngineInstance(engine);
 
-        // Ensure isTutorial flag is active
+        // Ensure isTutorial flag is active and engine starts paused for INTRO modal
         if (runTutorial) {
+          engine.isPaused = true;
           setIsTutorial(true);
         }
 
@@ -448,6 +503,7 @@ export default function App() {
   };
 
   const endMatch = (victoryParam?: boolean) => {
+    endMatchRef.current = endMatch;
     if (engineRef.current) {
       const currentLevel = activeLevelRef.current;
       const engine = engineRef.current;
@@ -476,10 +532,12 @@ export default function App() {
             engine.taxisLoadedCount,
             duration,
             disputesWonRef.current,
-            obstacleCollisionsRef.current
+            obstacleCollisionsRef.current,
+            sprintCountRef.current,
+            engine.combo
           );
 
-      const isVictory = evalResult.isVictory;
+      const isVictory = victoryParam !== undefined ? victoryParam : evalResult.isVictory;
       const totalEarnedKz = engine.matchKz + (isVictory ? evalResult.bonusKz : 0);
       const totalEarnedXp = engine.matchXp + (isVictory ? evalResult.bonusXp : 0);
 
@@ -528,7 +586,8 @@ export default function App() {
 
       // Advance activeLevel to newly unlocked level if victory
       if (isVictory && updatedStats.highestUnlockedLevel > currentLevel.level_number) {
-        const nextLvlData = ALL_LEVELS_DATA.find((l) => l.level_number === updatedStats.highestUnlockedLevel);
+        const nextLvlNum = updatedStats.highestUnlockedLevel;
+        const nextLvlData = ALL_LEVELS_DATA.find((l) => l.level_number === nextLvlNum) || toLevelData(getLevelConfig(nextLvlNum));
         if (nextLvlData) {
           setActiveLevel(nextLvlData);
           activeLevelRef.current = nextLvlData;
@@ -617,7 +676,21 @@ export default function App() {
     if (engineRef.current) {
       engineRef.current.updateInputs(engineRef.current.inputDir, running);
     }
-  }, []);
+    if (running) {
+      sprintCountRef.current++;
+      updateObjectivesAndCheckVictory((prev) =>
+        prev.map((obj) =>
+          obj.type === 'USE_SPRINT'
+            ? {
+                ...obj,
+                current_value: sprintCountRef.current,
+                completed: sprintCountRef.current >= obj.target_value,
+              }
+            : obj
+        )
+      );
+    }
+  }, [updateObjectivesAndCheckVictory]);
 
   const handlePause = useCallback(() => {
     setIsPaused(true);
@@ -679,9 +752,10 @@ export default function App() {
             activeDispute={activeDispute}
             floatingToasts={floatingToasts}
             engine={engineInstance}
-            levelObjectives={matchObjectives}
+            levelObjectives={!isTutorial ? matchObjectives : undefined}
             currentLevelNumber={!isTutorial ? activeLevel.level_number : undefined}
-            currentLevelTitle={!isTutorial ? activeLevel.level_title : undefined}
+            currentLevelTitle={!isTutorial ? activeLevel.level_title : 'Tutorial de Iniciação'}
+            isTutorial={isTutorial}
             onCallAction={handleCallAction}
             onInteractAction={handleInteractAction}
             onJoystickMove={handleJoystickMove}
@@ -692,6 +766,17 @@ export default function App() {
             tutorialHighlight={tutorialHighlight}
           />
 
+          {/* Level Start Banner ("Nível N — Objetivos") */}
+          {!isTutorial && showLevelBanner && (
+            <LevelStartBanner
+              levelNumber={activeLevel.level_number}
+              route={activeLevel.chapter_name}
+              title={activeLevel.level_title}
+              objectives={matchObjectives}
+              onDismiss={() => setShowLevelBanner(false)}
+            />
+          )}
+
           {/* Interactive Tutorial Overlay */}
           {isTutorial && (
             <TutorialOverlay
@@ -700,7 +785,7 @@ export default function App() {
               passengersServed={passengersServed}
               taxisLoaded={taxisLoaded}
               money={matchKz}
-              onStepChange={(nextStep) => setTutorialStep(nextStep)}
+              onStepChange={handleTutorialStepChange}
               onCompleteTutorial={() => {
                 endMatch(true);
               }}
@@ -750,10 +835,8 @@ export default function App() {
           onNextLevel={
             (() => {
               const currentLvlNum = matchResults.levelNumber || activeLevelRef.current.level_number || 1;
-              const nextLvl = ALL_LEVELS_DATA.find(
-                (l) => l.level_number === currentLvlNum + 1
-              );
-              if (!nextLvl) return undefined;
+              const nextLvlNum = currentLvlNum + 1;
+              const nextLvl = ALL_LEVELS_DATA.find((l) => l.level_number === nextLvlNum) || toLevelData(getLevelConfig(nextLvlNum));
               return () => {
                 setActiveLevel(nextLvl);
                 activeLevelRef.current = nextLvl;

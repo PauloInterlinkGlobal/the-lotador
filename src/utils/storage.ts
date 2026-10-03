@@ -78,6 +78,8 @@ export const DEFAULT_PLAYER_STATS: PlayerStats = {
   upgradeStamina: 0,
   upgradeVoice: 0,
   upgradePersuasion: 0,
+  upgradeTaxiSpeed: 0,
+  upgradeTaxiCapacity: 0,
   selectedGender: 'M',
   selectedShirt: 0,
   selectedPants: 0,

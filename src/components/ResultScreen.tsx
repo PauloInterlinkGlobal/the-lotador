@@ -95,6 +95,15 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
           )}
         </div>
 
+        {/* Failure Reason Card on Defeat */}
+        {!isVictory && (
+          <div className="w-full bg-[#ba1a1a]/10 border-2 border-[#ba1a1a] rounded-2xl p-3 mb-3 text-center">
+            <span className="text-xs font-space font-bold text-[#ba1a1a]">
+              ⚠️ {results.failReason || 'O tempo esgotou antes de cumprires todos os objetivos da fase!'}
+            </span>
+          </div>
+        )}
+
         {/* Stars Display (1 to 3 Stars) with Requirements Breakdown */}
         {isVictory && (
           <div className="flex flex-col items-center mb-3 w-full">

@@ -58,6 +58,22 @@ export const UpgradesModal: React.FC<UpgradesModalProps> = ({
       level: stats.upgradePersuasion,
       benefit: `+${(stats.upgradePersuasion * 4.5).toFixed(0)}% força no grito`,
     },
+    {
+      key: 'upgradeTaxiSpeed' as keyof PlayerStats,
+      title: 'VELOCIDADE DO TÁXI',
+      icon: 'speed',
+      desc: 'Carrinhas chegam e partem da paragem mais rápido',
+      level: stats.upgradeTaxiSpeed || 0,
+      benefit: `+${((stats.upgradeTaxiSpeed || 0) * 8).toFixed(0)}% vel. táxi`,
+    },
+    {
+      key: 'upgradeTaxiCapacity' as keyof PlayerStats,
+      title: 'CAPACIDADE DO TÁXI',
+      icon: 'airport_shuttle',
+      desc: 'Aumenta o limite de passageiros por candongueiro',
+      level: stats.upgradeTaxiCapacity || 0,
+      benefit: `+${stats.upgradeTaxiCapacity || 0} vagas extras`,
+    },
   ];
 
   const handleBuy = (key: keyof PlayerStats, currentLevel: number) => {

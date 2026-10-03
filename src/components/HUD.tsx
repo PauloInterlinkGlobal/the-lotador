@@ -42,6 +42,7 @@ interface HUDProps {
   onOpenObjectives?: () => void;
   objectivesCount?: number;
   tutorialHighlight?: 'JOYSTICK' | 'CALL' | 'RUN' | 'MONEY' | 'ENERGY' | 'OBJECTIVES' | 'TIMER' | null;
+  isTutorial?: boolean;
 }
 
 const HUDComponent: React.FC<HUDProps> = ({
@@ -70,6 +71,7 @@ const HUDComponent: React.FC<HUDProps> = ({
   onOpenObjectives,
   objectivesCount = 3,
   tutorialHighlight = null,
+  isTutorial = false,
 }) => {
   // Dynamic Floating Joystick State
   const [isTouchActive, setIsTouchActive] = useState(false);
@@ -339,13 +341,13 @@ const HUDComponent: React.FC<HUDProps> = ({
             {/* Fine Vertical Divider */}
             <div className="h-[clamp(10px,2.2vh,15px)] w-px bg-white/20" />
 
-            {/* Stopwatch */}
+            {/* Stopwatch or Tutorial Indicator */}
             <div className="flex items-center gap-[clamp(3px,0.5vw,6px)]">
               <span className="material-symbols-outlined text-[clamp(12px,1.3vw,15px)] text-white/75 leading-none select-none">
-                schedule
+                {isTutorial ? 'school' : 'schedule'}
               </span>
               <span className="text-[clamp(10px,1.15vw,13px)] font-extrabold text-white font-mono tracking-tight tabular-nums">
-                {timeFormatted}
+                {isTutorial ? 'TUTORIAL' : timeFormatted}
               </span>
             </div>
           </div>

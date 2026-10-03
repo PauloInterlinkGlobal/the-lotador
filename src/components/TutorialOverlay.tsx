@@ -197,8 +197,18 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
     }
   }, [currentStep]);
 
+  // Transição suave automática de ENTREGAR para CONCLUIDO
+  useEffect(() => {
+    if (currentStep === TutorialStep.ENTREGAR) {
+      const timer = setTimeout(() => {
+        onStepChange(TutorialStep.CONCLUIDO);
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [currentStep, onStepChange]);
+
   return (
-    <div className="absolute inset-0 pointer-events-none z-40 select-none overflow-hidden font-work">
+    <div className="absolute inset-0 pointer-events-none z-50 select-none overflow-hidden font-work">
       {/* ─────────────────────────────────────────────────────────────
           MARCADORES 3D PROJETADOS NO ECRÃ
           ───────────────────────────────────────────────────────────── */}
@@ -248,7 +258,7 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
             {/* Badge de cabeçalho */}
             <div className="flex items-center gap-2">
               <span className="bg-[#ffd700] text-[#161c28] font-space font-black text-[10px] uppercase px-3 py-1 rounded-full border border-[#161c28] tracking-wider">
-                TUTORIAL • NÍVEL 1 (MUTAMBA)
+                TUTORIAL • INICIAÇÃO (VIANA)
               </span>
             </div>
 
@@ -273,6 +283,9 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
               onClick={(e) => {
                 e.stopPropagation();
                 soundManager.playClick();
+                if (engine) {
+                  engine.isPaused = false;
+                }
                 onStepChange(TutorialStep.CHAMAR);
               }}
               className="w-full py-3.5 bg-[#ffd700] hover:bg-[#ffe16d] text-[#161c28] font-anybody font-black text-sm uppercase rounded-2xl sticker-border hard-shadow btn-press cursor-pointer flex items-center justify-center gap-2 shadow-lg mt-1 touch-manipulation"

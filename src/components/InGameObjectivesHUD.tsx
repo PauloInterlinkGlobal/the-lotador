@@ -50,12 +50,18 @@ export const InGameObjectivesHUD: React.FC<InGameObjectivesHUDProps> = ({
 
         // Custom short text based on objective type
         let valueText = `${obj.current_value}/${obj.target_value}`;
-        if (obj.type === 'MONEY_EARNED') {
+        if (obj.type === 'MONEY_EARNED' || obj.type === 'EARN_KZ') {
           valueText = `${obj.current_value}/${obj.target_value} Kz`;
-        } else if (obj.type === 'NO_COLLISIONS') {
+        } else if (obj.type === 'NO_COLLISIONS' || obj.type === 'NO_CRASHES') {
           valueText = isComplete ? '0 Batidas' : 'Penalizado';
         } else if (obj.type === 'BEAT_RIVAL') {
           valueText = isComplete ? 'Liderança!' : `${obj.current_value}/${obj.target_value} Rivais`;
+        } else if (obj.type === 'FINISH_UNDER_TIME') {
+          valueText = `< ${obj.target_value}s`;
+        } else if (obj.type === 'USE_SPRINT') {
+          valueText = `${obj.current_value}/${obj.target_value}x`;
+        } else if (obj.type === 'COMBO') {
+          valueText = `x${obj.current_value}/x${obj.target_value}`;
         }
 
         return (
@@ -91,12 +97,15 @@ export const InGameObjectivesHUD: React.FC<InGameObjectivesHUDProps> = ({
                     isComplete ? 'text-[#a7f3d0] line-through decoration-[#4caf50]' : 'text-white'
                   }`}
                 >
-                  {obj.type === 'PASSENGERS_DELIVERED' && 'Passageiros'}
+                  {(obj.type === 'PASSENGERS_DELIVERED' || obj.type === 'LOAD_PASSENGERS') && 'Passageiros'}
                   {obj.type === 'SPECIFIC_DESTINATION' && 'Destino'}
-                  {obj.type === 'MONEY_EARNED' && 'Ganhos'}
+                  {(obj.type === 'MONEY_EARNED' || obj.type === 'EARN_KZ') && 'Ganhos'}
                   {obj.type === 'FULL_CAPACITY_TRIPS' && 'Lotados'}
                   {obj.type === 'BEAT_RIVAL' && 'Rivais'}
-                  {obj.type === 'NO_COLLISIONS' && 'Cuidado'}
+                  {(obj.type === 'NO_COLLISIONS' || obj.type === 'NO_CRASHES') && 'Cuidado'}
+                  {obj.type === 'FINISH_UNDER_TIME' && 'Tempo'}
+                  {obj.type === 'USE_SPRINT' && 'Correr'}
+                  {obj.type === 'COMBO' && 'Combo'}
                 </span>
               </div>
 

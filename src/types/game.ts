@@ -149,6 +149,8 @@ export interface PlayerStats {
   upgradeStamina: number;
   upgradeVoice: number;
   upgradePersuasion: number;
+  upgradeTaxiSpeed?: number;
+  upgradeTaxiCapacity?: number;
 
   // Customization
   selectedGender: 'M' | 'F';
