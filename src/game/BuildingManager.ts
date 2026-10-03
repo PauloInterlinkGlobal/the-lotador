@@ -23,6 +23,7 @@
  */
 
 import * as THREE from 'three';
+import { classifyDevice } from '../utils/deviceProfile';
 
 export type BuildingType =
   | 'cantina'
@@ -129,6 +130,16 @@ export class BuildingManager {
   private static readonly sharedFloorBottomMat = new THREE.MeshBasicMaterial({ color: 0x1e293b });
   private static readonly sharedRoofTrimMat = new THREE.MeshLambertMaterial({ color: 0x161c28 });
   private static wallMatCache: Map<number, THREE.MeshLambertMaterial> = new Map();
+
+  public static areShadowsEnabled(quality: 'LOW' | 'MEDIUM' | 'HIGH'): boolean {
+    const profile = classifyDevice();
+    // On mobile devices: NO shadows on LOW or MEDIUM. Only optional on HIGH.
+    if (profile.isMobile) {
+      return quality === 'HIGH';
+    }
+    // Desktop: NO shadows on LOW. Enabled on MEDIUM & HIGH.
+    return quality !== 'LOW';
+  }
 
   public static getWallMaterial(colorHex: number): THREE.MeshLambertMaterial {
     let mat = this.wallMatCache.get(colorHex);
@@ -849,6 +860,18 @@ export class BuildingManager {
       props.push(this.createAngolaDirectionSign(-24, 0.4, 2.5));
       props.push(this.createMulticaixaTotem(15.5, 0.4, 8.6));
       props.push(this.createStreetFruitStall(0, 0.4, 8.6));
+      
+      const shadowsOn = this.areShadowsEnabled(quality);
+      if (!shadowsOn) {
+        props.forEach((p) => {
+          p.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              child.castShadow = false;
+              child.receiveShadow = false;
+            }
+          });
+        });
+      }
       return props;
     }
 
@@ -885,6 +908,18 @@ export class BuildingManager {
 
     const marketStall2 = this.createStreetFruitStall(8, 0.4, 8.6);
     props.push(marketStall2);
+
+    const shadowsOn = this.areShadowsEnabled(quality);
+    if (!shadowsOn) {
+      props.forEach((p) => {
+        p.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            child.castShadow = false;
+            child.receiveShadow = false;
+          }
+        });
+      });
+    }
 
     return props;
   }
@@ -931,10 +966,12 @@ export class BuildingManager {
       frontFacadeMat, // -Z front (faces sidewalk & camera!)
     ];
 
+    const shadowsOn = this.areShadowsEnabled(quality);
+
     const buildingMesh = new THREE.Mesh(bGeo, materials);
     buildingMesh.position.set(0, yCenter, 0);
     buildingMesh.castShadow = false;
-    buildingMesh.receiveShadow = quality !== 'LOW';
+    buildingMesh.receiveShadow = shadowsOn;
     group.add(buildingMesh);
 
     // IN LOW QUALITY MODE:
@@ -950,6 +987,7 @@ export class BuildingManager {
 
     // 2. Connecting Apron Pavement Slab (smooth low-poly transition to paragem)
     const apron = this.createConnectingApron(width, depth);
+    apron.receiveShadow = shadowsOn;
     group.add(apron);
 
     // 3. Roof Trim Parapet
@@ -957,7 +995,7 @@ export class BuildingManager {
     const roof = new THREE.Mesh(roofGeo, this.sharedRoofTrimMat);
     roof.position.set(0, height + 0.6, 0);
     roof.castShadow = false;
-    roof.receiveShadow = true;
+    roof.receiveShadow = shadowsOn;
     group.add(roof);
 
     // 4. Entrance Steps or Ramp
@@ -983,6 +1021,14 @@ export class BuildingManager {
       group.position.set(data.x, 0, zPos);
       if (data.rotationY) {
         group.rotation.y = data.rotationY;
+      }
+      if (!shadowsOn) {
+        group.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            child.castShadow = false;
+            child.receiveShadow = false;
+          }
+        });
       }
       return group;
     }
@@ -1039,6 +1085,15 @@ export class BuildingManager {
     group.position.set(data.x, 0, zPos);
     if (data.rotationY) {
       group.rotation.y = data.rotationY;
+    }
+
+    if (!shadowsOn) {
+      group.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          child.castShadow = false;
+          child.receiveShadow = false;
+        }
+      });
     }
 
     return group;

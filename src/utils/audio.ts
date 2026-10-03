@@ -4,8 +4,12 @@
 
 class SoundEngine {
   private ctx: AudioContext | null = null;
+  private sfxGainNode: GainNode | null = null;
+  private musicGainNode: GainNode | null = null;
   private isMuted: boolean = false;
   private isMusicMuted: boolean = false;
+  private sfxVolume: number = 1.0;
+  private musicVolume: number = 0.7;
   private musicInterval: any = null;
   private cachedStepBuffer: AudioBuffer | null = null;
 
@@ -15,6 +19,7 @@ class SoundEngine {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
+        this.setupGainNodes();
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
@@ -23,15 +28,63 @@ class SoundEngine {
     return this.ctx;
   }
 
+  private setupGainNodes() {
+    if (!this.ctx) return;
+    if (!this.sfxGainNode) {
+      this.sfxGainNode = this.ctx.createGain();
+      this.sfxGainNode.gain.setValueAtTime(this.isMuted ? 0 : this.sfxVolume, this.ctx.currentTime);
+      this.sfxGainNode.connect(this.ctx.destination);
+    }
+    if (!this.musicGainNode) {
+      this.musicGainNode = this.ctx.createGain();
+      this.musicGainNode.gain.setValueAtTime(this.isMusicMuted ? 0 : this.musicVolume, this.ctx.currentTime);
+      this.musicGainNode.connect(this.ctx.destination);
+    }
+  }
+
+  public getSfxDestination(): AudioNode | null {
+    const ctx = this.getContext();
+    if (!ctx) return null;
+    if (!this.sfxGainNode) this.setupGainNodes();
+    return this.sfxGainNode || ctx.destination;
+  }
+
+  public getMusicDestination(): AudioNode | null {
+    const ctx = this.getContext();
+    if (!ctx) return null;
+    if (!this.musicGainNode) this.setupGainNodes();
+    return this.musicGainNode || ctx.destination;
+  }
+
   public setMuted(muted: boolean) {
     this.isMuted = muted;
+    if (this.sfxGainNode && this.ctx) {
+      this.sfxGainNode.gain.setValueAtTime(muted ? 0 : this.sfxVolume, this.ctx.currentTime);
+    }
   }
 
   public setMusicMuted(muted: boolean) {
     this.isMusicMuted = muted;
+    if (this.musicGainNode && this.ctx) {
+      this.musicGainNode.gain.setValueAtTime(muted ? 0 : this.musicVolume, this.ctx.currentTime);
+    }
     if (muted && this.musicInterval) {
       clearInterval(this.musicInterval);
       this.musicInterval = null;
+    }
+  }
+
+  public setSfxVolume(vol: number) {
+    this.sfxVolume = Math.max(0, Math.min(1, vol));
+    if (this.sfxGainNode && this.ctx && !this.isMuted) {
+      this.sfxGainNode.gain.setValueAtTime(this.sfxVolume, this.ctx.currentTime);
+    }
+  }
+
+  public setMusicVolume(vol: number) {
+    this.musicVolume = Math.max(0, Math.min(1, vol));
+    if (this.musicGainNode && this.ctx && !this.isMusicMuted) {
+      this.musicGainNode.gain.setValueAtTime(this.musicVolume, this.ctx.currentTime);
     }
   }
 
@@ -426,7 +479,8 @@ class SoundEngine {
         gain.gain.setValueAtTime(0.03, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        const musicDest = this.getMusicDestination() || ctx.destination;
+        gain.connect(musicDest);
         osc.start();
         osc.stop(ctx.currentTime + 0.1);
       }

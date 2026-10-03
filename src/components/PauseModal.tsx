@@ -8,6 +8,7 @@ import { soundManager } from '../utils/audio';
 
 interface PauseModalProps {
   onResume: () => void;
+  onRestart?: () => void;
   onOpenObjectives: () => void;
   onOpenSettings: () => void;
   onQuitToMenu: () => void;
@@ -15,6 +16,7 @@ interface PauseModalProps {
 
 export const PauseModal: React.FC<PauseModalProps> = ({
   onResume,
+  onRestart,
   onOpenObjectives,
   onOpenSettings,
   onQuitToMenu,
@@ -46,6 +48,20 @@ export const PauseModal: React.FC<PauseModalProps> = ({
           >
             <span>▶ CONTINUAR</span>
           </button>
+
+          {/* Restart Match */}
+          {onRestart && (
+            <button
+              type="button"
+              onClick={() => {
+                soundManager.playClick();
+                onRestart();
+              }}
+              className="w-full py-2 bg-amber-100 hover:bg-amber-200 active:scale-95 text-[#b45309] font-space font-bold text-xs uppercase rounded-xl border-2 border-[#b45309] flex items-center justify-center gap-1.5 cursor-pointer transition-transform"
+            >
+              <span>↺ REINICIAR TURNO</span>
+            </button>
+          )}
 
           {/* Objectives */}
           <button

@@ -540,6 +540,24 @@ export const LevelSelectionScreen: React.FC<LevelSelectionScreenProps> = ({
                     );
                   })}
                 </div>
+
+                {/* 3-Star Criteria Pill */}
+                {selectedLevel.star_conditions && (
+                  <div className="mt-2 bg-black/50 rounded-xl p-2 border border-[#ffd700]/30 text-[10px] font-space space-y-1">
+                    <div className="flex items-center gap-1.5 text-slate-300">
+                      <span className="text-[#ffd700]">★</span>
+                      <span className="truncate">1★ {selectedLevel.star_conditions.oneStar}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-slate-300">
+                      <span className="text-[#ffd700]">★★</span>
+                      <span className="truncate">2★ {selectedLevel.star_conditions.twoStars}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-amber-300">
+                      <span className="text-[#ffd700]">★★★</span>
+                      <span className="truncate">3★ {selectedLevel.star_conditions.threeStars}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Match Details Specs: Time Limit, Rivals, Reward */}

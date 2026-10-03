@@ -31,6 +31,8 @@ interface HUDProps {
   floatingToasts?: { id: number; text: string; color: string }[];
   engine?: GameEngine | null;
   levelObjectives?: LevelObjective[];
+  currentLevelNumber?: number;
+  currentLevelTitle?: string;
   onCallAction: () => void;
   onInteractAction: () => void;
   onJoystickMove: (dir: { x: number; z: number }) => void;
@@ -57,6 +59,8 @@ const HUDComponent: React.FC<HUDProps> = ({
   floatingToasts,
   engine,
   levelObjectives,
+  currentLevelNumber,
+  currentLevelTitle,
   onCallAction,
   onInteractAction,
   onJoystickMove,
@@ -303,7 +307,11 @@ const HUDComponent: React.FC<HUDProps> = ({
         {/* Top-Center Objectives HUD (Displays up to 4 active objectives in real-time) */}
         {levelObjectives && levelObjectives.length > 0 && (
           <div className="flex-1 flex justify-center px-1 md:px-2 pointer-events-auto">
-            <InGameObjectivesHUD objectives={levelObjectives} />
+            <InGameObjectivesHUD
+              objectives={levelObjectives}
+              levelNumber={currentLevelNumber}
+              levelTitle={currentLevelTitle}
+            />
           </div>
         )}
 

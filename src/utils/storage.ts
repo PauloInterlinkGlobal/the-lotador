@@ -105,6 +105,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   graphicsQuality: 'LOW',
   language: 'PT',
   showFpsOverlay: false,
+  sfxVolume: 1.0,
+  musicVolume: 0.7,
 };
 
 export const DEFAULT_MISSIONS: Mission[] = [

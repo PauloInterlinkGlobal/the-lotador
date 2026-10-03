@@ -12,12 +12,22 @@ export const PerformanceOverlay: React.FC<PerformanceOverlayProps> = ({
 }) => {
   const [diagnostics, setDiagnostics] = useState<{
     fps: number;
+    frameTimeMs: number;
     drawCalls: number;
     triangles: number;
     geometries: number;
     textures: number;
     quality: 'LOW' | 'MEDIUM' | 'HIGH';
-    entities: { passengers: number; taxis: number; particles: number };
+    dpr: number;
+    resolution: string;
+    jsHeapMb: number | null;
+    entities: {
+      passengers: number;
+      taxis: number;
+      npcs: number;
+      obstacles: number;
+      particles: number;
+    };
   } | null>(null);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -59,18 +69,19 @@ export const PerformanceOverlay: React.FC<PerformanceOverlayProps> = ({
     return (
       <button
         onClick={() => setIsCollapsed(false)}
-        className="fixed top-2 left-2 z-[9999] px-2 py-0.5 rounded-lg bg-black/80 text-white font-mono text-[10px] border border-white/20 shadow-md backdrop-blur-xs flex items-center gap-1.5"
+        className="fixed top-2 left-2 z-[9999] px-2 py-0.5 rounded-lg bg-black/85 text-white font-mono text-[10px] border border-white/20 shadow-md backdrop-blur-xs flex items-center gap-1.5"
       >
         <span className={`px-1.5 py-0.2 rounded font-bold ${fpsColor}`}>{fps} FPS</span>
-        <span className="text-slate-300 font-bold">OPT</span>
+        <span className="text-slate-300 font-bold">{diagnostics.frameTimeMs}ms</span>
+        <span className="text-amber-400 font-bold">DC:{diagnostics.drawCalls}</span>
       </button>
     );
   }
 
   return (
-    <div className="fixed top-2 left-2 z-[9999] bg-slate-900/90 text-white rounded-xl border border-slate-700/80 shadow-xl backdrop-blur-sm p-2 text-xs font-mono select-none flex flex-col gap-1.5 max-w-[210px]">
+    <div className="fixed top-2 left-2 z-[9999] bg-slate-900/95 text-white rounded-xl border border-slate-700/80 shadow-2xl backdrop-blur-md p-2 text-xs font-mono select-none flex flex-col gap-1.5 max-w-[240px]">
       <div className="flex items-center justify-between gap-2 border-b border-slate-700/60 pb-1">
-        <span className="font-bold text-[10px] text-slate-300 tracking-wider">DIAGNÓSTICO 3D</span>
+        <span className="font-bold text-[10px] text-amber-400 tracking-wider">DIAGNÓSTICO 3D (DEV)</span>
         <div className="flex items-center gap-1">
           <button
             onClick={cycleQuality}
@@ -89,9 +100,16 @@ export const PerformanceOverlay: React.FC<PerformanceOverlayProps> = ({
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-slate-400 text-[11px]">FPS:</span>
-        <span className={`px-2 py-0.5 rounded-md font-bold text-xs ${fpsColor}`}>
-          {fps} FPS
+        <div className="flex items-center gap-1.5">
+          <span className={`px-2 py-0.5 rounded-md font-bold text-xs ${fpsColor}`}>
+            {fps} FPS
+          </span>
+          <span className="text-slate-300 text-[10px]">
+            {diagnostics.frameTimeMs} ms
+          </span>
+        </div>
+        <span className="text-slate-400 text-[10px]">
+          DPR: <b className="text-white">{diagnostics.dpr.toFixed(2)}</b>
         </span>
       </div>
 
@@ -116,11 +134,23 @@ export const PerformanceOverlay: React.FC<PerformanceOverlayProps> = ({
           <span className="text-slate-400">Geometrias:</span>
           <span className="font-semibold text-slate-200">{diagnostics.geometries}</span>
         </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">Resolução:</span>
+          <span className="font-semibold text-slate-200">{diagnostics.resolution}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-slate-400">JS Heap:</span>
+          <span className="font-semibold text-slate-200">
+            {diagnostics.jsHeapMb !== null ? `${diagnostics.jsHeapMb}MB` : 'N/A'}
+          </span>
+        </div>
       </div>
 
       <div className="flex items-center justify-between text-[9px] text-slate-400 border-t border-slate-700/60 pt-1">
         <span>Pax: {diagnostics.entities.passengers}</span>
         <span>Táxis: {diagnostics.entities.taxis}</span>
+        <span>NPC: {diagnostics.entities.npcs}</span>
+        <span>Obs: {diagnostics.entities.obstacles}</span>
         <span>Part: {diagnostics.entities.particles}</span>
       </div>
     </div>

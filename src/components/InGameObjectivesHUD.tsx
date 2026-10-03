@@ -9,12 +9,16 @@ import { LevelObjective, getObjectiveVisuals } from '../types/levelObjectives';
 
 interface InGameObjectivesHUDProps {
   objectives: LevelObjective[];
+  levelNumber?: number;
+  levelTitle?: string;
   onToggleObjective?: (index: number) => void;
   isInteractivePreview?: boolean;
 }
 
 export const InGameObjectivesHUD: React.FC<InGameObjectivesHUDProps> = ({
   objectives,
+  levelNumber,
+  levelTitle,
   onToggleObjective,
   isInteractivePreview = false,
 }) => {
@@ -28,6 +32,17 @@ export const InGameObjectivesHUD: React.FC<InGameObjectivesHUDProps> = ({
         maxWidth: 'min(96vw, 680px)',
       }}
     >
+      {/* Level Number Pill */}
+      {levelNumber && (
+        <div
+          title={levelTitle || `Fase ${levelNumber}`}
+          className="shrink-0 flex items-center gap-1 px-2 py-1 bg-[#161c28]/90 border border-[#ffd700]/50 rounded-xl shadow-md backdrop-blur-md"
+        >
+          <span className="text-[10px] md:text-[11px] font-anybody font-black text-[#ffd700] tracking-wider uppercase">
+            F.{levelNumber}
+          </span>
+        </div>
+      )}
       {objectives.slice(0, 4).map((obj, index) => {
         const visual = getObjectiveVisuals(obj.type);
         const percent = Math.min(100, Math.round((obj.current_value / Math.max(1, obj.target_value)) * 100));

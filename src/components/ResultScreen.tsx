@@ -95,9 +95,9 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
           )}
         </div>
 
-        {/* Stars Display (1 to 3 Stars) */}
+        {/* Stars Display (1 to 3 Stars) with Requirements Breakdown */}
         {isVictory && (
-          <div className="flex flex-col items-center mb-3">
+          <div className="flex flex-col items-center mb-3 w-full">
             <div className="flex items-center justify-center gap-2 mb-1">
               {[1, 2, 3].map((starNum) => {
                 const earned = starNum <= stars;
@@ -115,13 +115,57 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
                 );
               })}
             </div>
-            <span className="font-space text-xs font-bold text-slate-600">
+            <span className="font-space text-xs font-bold text-slate-600 mb-2">
               {stars === 3
                 ? '⭐ Perfeito! 3 Estrelas conquistadas'
                 : stars === 2
                 ? '⭐ Muito bom! 2 Estrelas conquistadas'
                 : '⭐ Fase superada! 1 Estrela conquistada'}
             </span>
+
+            {/* Star Requirements Detailed Checklist */}
+            {results.starConditions && (
+              <div className="w-full bg-[#f8f9ff] border border-slate-200 rounded-xl p-2.5 flex flex-col gap-1.5 text-left mb-1">
+                <div className="flex items-center justify-between text-[11px] font-space">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-xs ${results.starsBreakdown?.star1 ? 'text-[#ffd700]' : 'text-slate-300'}`}>★</span>
+                    <span className="font-bold text-slate-700 truncate">{results.starConditions.oneStar}</span>
+                  </div>
+                  <span className={`font-black text-[10px] px-1.5 py-0.2 rounded uppercase ${results.starsBreakdown?.star1 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'}`}>
+                    {results.starsBreakdown?.star1 ? 'CONCLUÍDO' : 'PENDENTE'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] font-space">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-xs ${results.starsBreakdown?.star2 ? 'text-[#ffd700]' : 'text-slate-300'}`}>★</span>
+                    <span className="font-bold text-slate-700 truncate">{results.starConditions.twoStars}</span>
+                  </div>
+                  <span className={`font-black text-[10px] px-1.5 py-0.2 rounded uppercase ${results.starsBreakdown?.star2 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'}`}>
+                    {results.starsBreakdown?.star2 ? 'CONCLUÍDO' : 'PENDENTE'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] font-space">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-xs ${results.starsBreakdown?.star3 ? 'text-[#ffd700]' : 'text-slate-300'}`}>★</span>
+                    <span className="font-bold text-slate-700 truncate">{results.starConditions.threeStars}</span>
+                  </div>
+                  <span className={`font-black text-[10px] px-1.5 py-0.2 rounded uppercase ${results.starsBreakdown?.star3 ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-400'}`}>
+                    {results.starsBreakdown?.star3 ? 'DOMINADA' : 'PENDENTE'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Paragem Dominada Special Crown Banner */}
+            {results.isParagemDominada && (
+              <div className="w-full bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-500 text-[#161c28] border-2 border-[#161c28] p-2 rounded-xl mt-1 flex items-center justify-center gap-2 hard-shadow-sm">
+                <span className="text-lg">👑</span>
+                <span className="font-anybody font-black text-xs uppercase tracking-wider">
+                  PARAGEM DOMINADA COM 3 ESTRELAS!
+                </span>
+                <span className="text-lg">👑</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -221,6 +265,12 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({
               <span>PRÓXIMA FASE</span>
               <span className="material-symbols-outlined text-lg">arrow_forward</span>
             </button>
+          )}
+
+          {isVictory && !onNextLevel && !results.isTutorial && (
+            <div className="w-full bg-gradient-to-r from-amber-400 to-yellow-300 text-[#161c28] font-anybody font-black py-2.5 px-3 rounded-2xl border-2 border-[#161c28] uppercase text-xs md:text-sm flex items-center justify-center gap-2">
+              <span>🏆 TODAS AS FASES CONCLUÍDAS!</span>
+            </div>
           )}
 
           {/* Retry Button */}

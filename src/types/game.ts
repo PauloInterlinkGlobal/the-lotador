@@ -227,6 +227,11 @@ export interface MatchResults {
     star2: boolean;
     star3: boolean;
   };
+  starConditions?: {
+    oneStar: string;
+    twoStars: string;
+    threeStars: string;
+  };
   isParagemDominada?: boolean; // True on beating Level 20
   firstTimeClearBonus?: number;
   failReason?: string;
@@ -258,6 +263,8 @@ export interface GameSettings {
   graphicsQuality: 'LOW' | 'MEDIUM' | 'HIGH';
   language: 'PT' | 'EN';
   showFpsOverlay?: boolean;
+  sfxVolume?: number; // 0.0 - 1.0 (default 1.0)
+  musicVolume?: number; // 0.0 - 1.0 (default 0.7)
 }
 
 export interface OffScreenTaxiIndicator {

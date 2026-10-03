@@ -67,6 +67,14 @@ export default function App() {
   const [activeLevel, setActiveLevel] = useState<LevelData>(
     () => ALL_LEVELS_DATA.find((l) => l.level_number === (stats.highestUnlockedLevel || 1)) || ALL_LEVELS_DATA[0]
   );
+  const activeLevelRef = useRef<LevelData>(activeLevel);
+  activeLevelRef.current = activeLevel;
+
+  // Reactive Game Engine & Entity Counts for HUD & Tutorial
+  const [engineInstance, setEngineInstance] = useState<GameEngine | null>(null);
+  const [passengersServed, setPassengersServed] = useState(0);
+  const [taxisLoaded, setTaxisLoaded] = useState(0);
+
   const [matchObjectives, setMatchObjectives] = useState<LevelObjective[]>(
     () => (ALL_LEVELS_DATA.find((l) => l.level_number === (stats.highestUnlockedLevel || 1)) || ALL_LEVELS_DATA[0]).objectives
   );
@@ -123,6 +131,17 @@ export default function App() {
   // Request persistent storage on mount (prevents browser data eviction) and hydrate from secure storage
   useEffect(() => {
     storageManager.requestPersistentStorage();
+    // Initialize soundManager from stored settings
+    const initialSettings = loadSettings();
+    soundManager.setMuted(!initialSettings.soundEnabled);
+    soundManager.setMusicMuted(!initialSettings.musicEnabled);
+    if (typeof initialSettings.sfxVolume === 'number') {
+      soundManager.setSfxVolume(initialSettings.sfxVolume);
+    }
+    if (typeof initialSettings.musicVolume === 'number') {
+      soundManager.setMusicVolume(initialSettings.musicVolume);
+    }
+
     storageManager.loadPlayerProgress().then((loadedStats) => {
       if (loadedStats && (loadedStats.money !== stats.money || loadedStats.level !== stats.level || loadedStats.bestScore !== stats.bestScore)) {
         setStats(loadedStats);
@@ -207,13 +226,26 @@ export default function App() {
     return () => clearInterval(interval);
   }, [screen]);
 
-  const startMatch = async (forceTutorial = false) => {
+  const startMatch = async (forceTutorial = false, levelToPlay?: LevelData) => {
     soundManager.playClick();
     tryLockLandscapeWeb();
 
-    const runTutorial = forceTutorial || (!stats.tutorialCompleted && stats.level === 1);
+    let selectedLevel = levelToPlay || activeLevelRef.current;
+    if (forceTutorial) {
+      selectedLevel = ALL_LEVELS_DATA[0];
+    }
+    setActiveLevel(selectedLevel);
+    activeLevelRef.current = selectedLevel;
+
+    const runTutorial = forceTutorial || (!stats.tutorialCompleted && selectedLevel.level_number === 1);
     setIsTutorial(runTutorial);
     setTutorialStep(TutorialStep.INTRO);
+
+    if (engineRef.current) {
+      engineRef.current.destroy();
+      engineRef.current = null;
+    }
+    setEngineInstance(null);
 
     disputesWonRef.current = 0;
     obstacleCollisionsRef.current = 0;
@@ -221,9 +253,11 @@ export default function App() {
     setMatchKz(0);
     setMatchXp(0);
     setMatchCombo(1);
-    setTimerSeconds(activeLevel.time_limit_seconds || 180);
+    setPassengersServed(0);
+    setTaxisLoaded(0);
+    setTimerSeconds(selectedLevel.time_limit_seconds || 180);
     setMatchObjectives(
-      activeLevel.objectives.map((o) => ({
+      selectedLevel.objectives.map((o) => ({
         ...o,
         current_value: 0,
         completed: false,
@@ -254,7 +288,12 @@ export default function App() {
     // Initialize 3D Game Engine after canvas mount
     setTimeout(() => {
       if (canvasContainerRef.current) {
-        engineRef.current = new GameEngine(
+        if (engineRef.current) {
+          engineRef.current.destroy();
+          engineRef.current = null;
+        }
+
+        const engine = new GameEngine(
           canvasContainerRef.current,
           stats,
           {
@@ -275,6 +314,7 @@ export default function App() {
               );
             },
             onTaxiLoaded: (taxi, reward, xp) => {
+              setTaxisLoaded((prev) => prev + 1);
               // Check for rush hour condition
               if (engineRef.current && engineRef.current.taxisLoadedCount >= 5 && !engineRef.current.isRushHour) {
                 engineRef.current.toggleRushHour(true);
@@ -305,7 +345,9 @@ export default function App() {
               setStamina((prev) => (prev === roundedCur ? prev : roundedCur));
               setMaxStamina((prev) => (prev === roundedMax ? prev : roundedMax));
             },
-            onPassengerServedCount: (count) => {},
+            onPassengerServedCount: (count) => {
+              setPassengersServed(count);
+            },
             onDisputeUpdate: (dispute) => {
               setActiveDispute(dispute ? { ...dispute } : null);
             },
@@ -330,6 +372,7 @@ export default function App() {
               }
             },
             onPassengerBoarded: () => {
+              setPassengersServed((prev) => prev + 1);
               setMatchObjectives((prev) =>
                 prev.map((obj) =>
                   obj.type === 'PASSENGERS_DELIVERED'
@@ -391,13 +434,31 @@ export default function App() {
                 )
               );
             },
-            onPlayerRunStart: () => {},
+            onPlayerRunStart: () => {
+              if (runTutorial) {
+                setTutorialStep((prev) => {
+                  if (prev === TutorialStep.RUN_STAMINA) {
+                    return TutorialStep.OBJECTIVES;
+                  }
+                  return prev;
+                });
+              }
+            },
           },
-          { isTutorial: runTutorial, levelConfig: activeLevel }
+          { isTutorial: runTutorial, levelConfig: selectedLevel }
         );
 
-        if (engineRef.current && gameSettings.graphicsQuality) {
-          engineRef.current.setGraphicsQuality(gameSettings.graphicsQuality);
+        engineRef.current = engine;
+        setEngineInstance(engine);
+
+        // Ensure isTutorial and TutorialStep.INTRO visibility state are strictly asserted upon engine mount/re-init
+        if (runTutorial) {
+          setIsTutorial(true);
+          setTutorialStep(TutorialStep.INTRO);
+        }
+
+        if (gameSettings.graphicsQuality) {
+          engine.setGraphicsQuality(gameSettings.graphicsQuality);
         }
       }
     }, 100);
@@ -405,8 +466,9 @@ export default function App() {
 
   const endMatch = (victoryParam?: boolean) => {
     if (engineRef.current) {
+      const currentLevel = activeLevelRef.current;
       const engine = engineRef.current;
-      const duration = Math.max(1, (activeLevel.time_limit_seconds || 180) - timerSeconds);
+      const duration = Math.max(1, (currentLevel.time_limit_seconds || 180) - timerSeconds);
       const isNewRecord = engine.matchKz > stats.bestScore;
 
       // Evaluate level completion and star requirements
@@ -425,7 +487,7 @@ export default function App() {
             failReason: undefined,
           }
         : evaluateLevelResult(
-            activeLevel,
+            currentLevel,
             engine.matchKz,
             engine.passengersServedCount,
             engine.taxisLoadedCount,
@@ -438,12 +500,12 @@ export default function App() {
       const totalEarnedKz = engine.matchKz + (isVictory ? evalResult.bonusKz : 0);
       const totalEarnedXp = engine.matchXp + (isVictory ? evalResult.bonusXp : 0);
 
-      // Record level completion in progression storage
+      // Record level completion in progression storage (applies to standard levels and tutorial Level 1 victory)
       let updatedStats = { ...stats };
-      if (isVictory && !isTutorial) {
+      if (isVictory) {
         const recordResult = recordLevelCompletion(
           stats,
-          activeLevel.level_number,
+          currentLevel.level_number,
           evalResult.stars,
           engine.matchKz
         );
@@ -481,6 +543,15 @@ export default function App() {
       savePlayerStats(updatedStats);
       setStats(updatedStats);
 
+      // Advance activeLevel to newly unlocked level if victory
+      if (isVictory && updatedStats.highestUnlockedLevel > currentLevel.level_number) {
+        const nextLvlData = ALL_LEVELS_DATA.find((l) => l.level_number === updatedStats.highestUnlockedLevel);
+        if (nextLvlData) {
+          setActiveLevel(nextLvlData);
+          activeLevelRef.current = nextLvlData;
+        }
+      }
+
       storageManager.recordFinishedMatch(
         {
           id: `match_${Date.now()}`,
@@ -489,7 +560,7 @@ export default function App() {
           moneyEarned: totalEarnedKz,
           taxisLoaded: engine.taxisLoadedCount,
           passengersServed: engine.passengersServedCount,
-          zoneId: activeLevel.chapter_id || stats.selectedMapId || 'cazenga',
+          zoneId: currentLevel.chapter_id || stats.selectedMapId || 'cazenga',
           maxCombo: engine.combo,
         },
         updatedStats
@@ -505,12 +576,13 @@ export default function App() {
         duration,
         isTutorial,
         isVictory,
-        levelId: activeLevel.level_number,
-        levelNumber: activeLevel.level_number,
-        levelTitle: activeLevel.level_title,
-        zoneName: activeLevel.chapter_name,
+        levelId: currentLevel.level_number,
+        levelNumber: currentLevel.level_number,
+        levelTitle: currentLevel.level_title,
+        zoneName: currentLevel.chapter_name,
         starsEarned: evalResult.stars,
         starsBreakdown: evalResult.starsBreakdown,
+        starConditions: currentLevel.star_conditions,
         isParagemDominada: evalResult.isParagemDominada,
         firstTimeClearBonus: evalResult.firstTimeClearBonus,
         failReason: evalResult.failReason,
@@ -520,6 +592,7 @@ export default function App() {
       };
 
       setMatchResults(res);
+      setEngineInstance(null);
       engine.destroy();
       engineRef.current = null;
     }
@@ -582,8 +655,18 @@ export default function App() {
       {screen === 'MENU' && (
         <MainMenu
           stats={stats}
-          onStartGame={() => startMatch(false)}
-          onStartTutorial={() => startMatch(true)}
+          onStartGame={() => {
+            const targetLvl = ALL_LEVELS_DATA.find((l) => l.level_number === (stats.highestUnlockedLevel || 1)) || activeLevelRef.current;
+            setActiveLevel(targetLvl);
+            activeLevelRef.current = targetLvl;
+            startMatch(false, targetLvl);
+          }}
+          onStartTutorial={() => {
+            const tutorialLvl = ALL_LEVELS_DATA[0];
+            setActiveLevel(tutorialLvl);
+            activeLevelRef.current = tutorialLvl;
+            startMatch(true, tutorialLvl);
+          }}
           onOpenUpgrades={() => setActiveModal('UPGRADES')}
           onOpenCharacter={() => setActiveModal('CHARACTER')}
           onOpenMaps={() => setActiveModal('MAPS')}
@@ -610,11 +693,13 @@ export default function App() {
             isRushHour={isRushHour}
             taxis={taxis}
             passengers={passengers}
-            taxisLoadedCount={engineRef.current?.taxisLoadedCount || 0}
+            taxisLoadedCount={taxisLoaded}
             activeDispute={activeDispute}
             floatingToasts={floatingToasts}
-            engine={engineRef.current}
+            engine={engineInstance}
             levelObjectives={matchObjectives}
+            currentLevelNumber={!isTutorial ? activeLevel.level_number : undefined}
+            currentLevelTitle={!isTutorial ? activeLevel.level_title : undefined}
             onCallAction={handleCallAction}
             onInteractAction={handleInteractAction}
             onJoystickMove={handleJoystickMove}
@@ -628,10 +713,10 @@ export default function App() {
           {/* Interactive Tutorial Overlay */}
           {isTutorial && (
             <TutorialOverlay
-              engine={engineRef.current}
+              engine={engineInstance}
               currentStep={tutorialStep}
-              passengersServed={engineRef.current?.passengersServedCount || 0}
-              taxisLoaded={engineRef.current?.taxisLoadedCount || 0}
+              passengersServed={passengersServed}
+              taxisLoaded={taxisLoaded}
               money={matchKz}
               onStepChange={(nextStep) => setTutorialStep(nextStep)}
               onOpenObjectives={() => {
@@ -648,6 +733,16 @@ export default function App() {
           {isPaused && !activeModal && (
             <PauseModal
               onResume={() => setIsPaused(false)}
+              onRestart={() => {
+                setIsPaused(false);
+                if (engineRef.current) {
+                  engineRef.current.destroy();
+                  engineRef.current = null;
+                }
+                setEngineInstance(null);
+                soundManager.stopBackgroundRhythm();
+                startMatch(isTutorial, activeLevelRef.current);
+              }}
               onOpenObjectives={() => setActiveModal('MISSIONS')}
               onOpenSettings={() => setActiveModal('SETTINGS')}
               onQuitToMenu={() => {
@@ -656,6 +751,7 @@ export default function App() {
                   engineRef.current.destroy();
                   engineRef.current = null;
                 }
+                setEngineInstance(null);
                 soundManager.stopBackgroundRhythm();
                 setScreen('MENU');
               }}
@@ -668,19 +764,22 @@ export default function App() {
       {screen === 'RESULT' && matchResults && (
         <ResultScreen
           results={matchResults}
-          onPlayAgain={() => startMatch(isTutorial)}
+          onPlayAgain={() => startMatch(isTutorial, activeLevelRef.current)}
           onContinue={() => setScreen('MENU')}
-          onNextLevel={() => {
-            const nextLvl = ALL_LEVELS_DATA.find(
-              (l) => l.level_number === (matchResults.levelNumber || 1) + 1
-            );
-            if (nextLvl) {
-              setActiveLevel(nextLvl);
-              startMatch(false);
-            } else {
-              setScreen('MENU');
-            }
-          }}
+          onNextLevel={
+            (() => {
+              const currentLvlNum = matchResults.levelNumber || activeLevelRef.current.level_number || 1;
+              const nextLvl = ALL_LEVELS_DATA.find(
+                (l) => l.level_number === currentLvlNum + 1
+              );
+              if (!nextLvl) return undefined;
+              return () => {
+                setActiveLevel(nextLvl);
+                activeLevelRef.current = nextLvl;
+                startMatch(false, nextLvl);
+              };
+            })()
+          }
           onOpenLevelMap={() => {
             setScreen('MENU');
             setActiveModal('MAPS');
@@ -722,8 +821,9 @@ export default function App() {
             }))}
             onSelectAndPlayLevel={(lvl) => {
               setActiveLevel(lvl);
+              activeLevelRef.current = lvl;
               setActiveModal(null);
-              startMatch(false);
+              startMatch(false, lvl);
             }}
             onClose={() => setActiveModal(null)}
           />
@@ -763,8 +863,8 @@ export default function App() {
       {/* PWA Offline / Update / Install Status Banner */}
       <PWAStatusBanner />
 
-      {/* Runtime Performance Diagnostics & Quality Selector */}
-      {gameSettings.showFpsOverlay && (
+      {/* Runtime Performance Diagnostics & Quality Selector (Active during game in DEV or when enabled in Settings) */}
+      {screen === 'GAME' && (import.meta.env.DEV || gameSettings.showFpsOverlay) && (
         <PerformanceOverlay
           engine={engineRef.current}
           onQualityChange={(q) => {

@@ -23,6 +23,7 @@ import { soundManager } from '../utils/audio';
 import { spriteAtlasManager } from '../utils/spriteAtlas';
 import { CAMPAIGN_ZONES } from '../utils/storage';
 import { BuildingManager } from './BuildingManager';
+import { classifyDevice, DynamicResolutionScaler } from '../utils/deviceProfile';
 
 export interface GameEngineCallbacks {
   onScoreUpdate: (kz: number, xp: number, combo: number) => void;
@@ -228,6 +229,8 @@ export class GameEngine {
   private taxiMeshes: Map<string, THREE.Group> = new Map();
   private npcMeshes: Map<string, THREE.Group> = new Map();
   private obstacleMeshes: Map<string, THREE.Group> = new Map();
+  private roadMesh!: THREE.Mesh;
+  private sidewalkMesh!: THREE.Mesh;
 
   // Match State
   public combo = 1;
@@ -320,14 +323,17 @@ export class GameEngine {
   private wasRunningLastFrame: boolean = false;
   private lastDustSpawnTime: number = 0;
 
-  // Telemetry, Performance & Auto-Quality
+  // Telemetry, Performance & Dynamic Resolution Scaling (DRS)
   public currentFps: number = 60;
   public graphicsQuality: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
   private lastFrameTime: number = 0;
+  private lastFrameDeltaMs: number = 16.6;
   private frameCount: number = 0;
   private fpsUpdateTime: number = 0;
   private lowFpsStreak: number = 0;
   private dirLight!: THREE.DirectionalLight;
+  public deviceProfile = classifyDevice();
+  private dynamicResolutionScaler!: DynamicResolutionScaler;
 
   private particles: {
     sprite: THREE.Sprite | THREE.Mesh;
@@ -530,18 +536,31 @@ export class GameEngine {
     this.renderer = new THREE.WebGLRenderer({ antialias: useAntialias, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
 
-    const baseDpr = window.devicePixelRatio || 1;
-    const targetDpr = quality === 'LOW' ? 1.0 : quality === 'HIGH' ? Math.min(baseDpr, 1.75) : Math.min(baseDpr, 1.25);
-    this.renderer.setPixelRatio(targetDpr);
+    // Determine DPR bounds based on device profile and quality (Never allow DPR > 1.15 on mobile)
+    const minDpr = this.deviceProfile.isMobile
+      ? (quality === 'LOW' ? 0.75 : 0.85)
+      : (quality === 'LOW' ? 0.85 : 1.0);
+    const maxDpr = this.deviceProfile.isMobile
+      ? (quality === 'LOW' ? 0.90 : quality === 'MEDIUM' ? 1.0 : 1.15)
+      : (quality === 'LOW' ? 1.0 : quality === 'MEDIUM' ? 1.25 : Math.min(this.deviceProfile.nativeDpr, 1.5));
 
-    if (quality === 'LOW') {
+    this.dynamicResolutionScaler = new DynamicResolutionScaler(maxDpr, minDpr, maxDpr);
+    this.renderer.setPixelRatio(this.dynamicResolutionScaler.getCurrentDpr());
+
+    // Shadow Configuration (FASE 7 - REMOVER SOMBRAS MOBILE)
+    // On mobile devices: shadows are ALWAYS OFF on LOW and MEDIUM, and only optional on HIGH (small basic map).
+    // Desktop: LOW = OFF, MEDIUM = BasicShadowMap, HIGH = PCFSoftShadowMap (capped at 1024).
+    const shadowsEnabled = this.deviceProfile.isMobile
+      ? (quality === 'HIGH')
+      : (quality !== 'LOW');
+
+    if (!shadowsEnabled) {
       this.renderer.shadowMap.enabled = false;
-    } else if (quality === 'MEDIUM') {
-      this.renderer.shadowMap.enabled = true;
-      this.renderer.shadowMap.type = THREE.BasicShadowMap;
     } else {
       this.renderer.shadowMap.enabled = true;
-      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      this.renderer.shadowMap.type = (quality === 'HIGH' && !this.deviceProfile.isMobile)
+        ? THREE.PCFSoftShadowMap
+        : THREE.BasicShadowMap;
     }
 
     // Clear container and append
@@ -559,11 +578,11 @@ export class GameEngine {
     dirLight.position.set(15, 25, -15);
     this.dirLight = dirLight;
     
-    if (quality === 'LOW') {
+    if (!shadowsEnabled) {
       dirLight.castShadow = false;
     } else {
       dirLight.castShadow = true;
-      const shadowRes = quality === 'HIGH' ? 1024 : 512;
+      const shadowRes = (quality === 'HIGH' && !this.deviceProfile.isMobile) ? 1024 : 512;
       dirLight.shadow.mapSize.width = shadowRes;
       dirLight.shadow.mapSize.height = shadowRes;
       dirLight.shadow.camera.near = 0.5;
@@ -583,7 +602,11 @@ export class GameEngine {
     const road = new THREE.Mesh(roadGeo, roadMat);
     road.rotation.x = -Math.PI / 2;
     road.position.set(0, 0, -4);
-    road.receiveShadow = true;
+    const shadowsEnabled = this.deviceProfile.isMobile
+      ? (this.graphicsQuality === 'HIGH')
+      : (this.graphicsQuality !== 'LOW');
+    road.receiveShadow = shadowsEnabled;
+    this.roadMesh = road;
     this.scene.add(road);
 
     // Road Stripes
@@ -611,7 +634,8 @@ export class GameEngine {
     const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0xe2e8f9 });
     const sidewalk = new THREE.Mesh(sidewalkGeo, sidewalkMat);
     sidewalk.position.set(0, 0.2, 5);
-    sidewalk.receiveShadow = true;
+    sidewalk.receiveShadow = shadowsEnabled;
+    this.sidewalkMesh = sidewalk;
     this.scene.add(sidewalk);
 
     // Curb edge yellow line
@@ -1614,7 +1638,11 @@ export class GameEngine {
     const modelClone = GameEngine.cachedTaxiModel.clone(true);
     modelClone.name = 'hiaceVanModel';
 
-    if (this.graphicsQuality === 'LOW') {
+    const shadowsEnabled = this.deviceProfile.isMobile
+      ? (this.graphicsQuality === 'HIGH')
+      : (this.graphicsQuality !== 'LOW');
+
+    if (!shadowsEnabled) {
       modelClone.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           child.castShadow = false;
@@ -1926,6 +1954,7 @@ export class GameEngine {
 
     if (!this.lastFrameTime) this.lastFrameTime = timestamp;
     const rawDelta = (timestamp - this.lastFrameTime) / 1000;
+    this.lastFrameDeltaMs = timestamp - this.lastFrameTime;
     this.lastFrameTime = timestamp;
     // Delta clamping: prevents physics explosion if tab was minimized/backgrounded
     const delta = Math.min(Math.max(rawDelta, 0.005), 0.05);
@@ -1945,6 +1974,14 @@ export class GameEngine {
         }
       } else {
         this.lowFpsStreak = Math.max(0, this.lowFpsStreak - 1);
+      }
+
+      // Dynamic Resolution Scaling (DRS) with hysteresis
+      if (this.dynamicResolutionScaler && this.renderer) {
+        const adjustedDpr = this.dynamicResolutionScaler.update(this.currentFps, timestamp);
+        if (adjustedDpr !== null) {
+          this.renderer.setPixelRatio(adjustedDpr);
+        }
       }
     }
 
@@ -1976,14 +2013,35 @@ export class GameEngine {
   }
 
   public getDiagnostics() {
+    let jsHeapMb: number | null = null;
+    if (typeof performance !== 'undefined' && (performance as any).memory) {
+      jsHeapMb = Math.round((performance as any).memory.usedJSHeapSize / (1024 * 1024));
+    }
+
+    const currentDpr = this.renderer ? this.renderer.getPixelRatio() : 1;
+    const size = new THREE.Vector2();
+    if (this.renderer) {
+      this.renderer.getSize(size);
+    }
+
     return {
       fps: Math.round(this.currentFps),
+      frameTimeMs: Number(this.lastFrameDeltaMs.toFixed(1)),
       drawCalls: this.renderer?.info?.render?.calls || 0,
       triangles: this.renderer?.info?.render?.triangles || 0,
       geometries: this.renderer?.info?.memory?.geometries || 0,
       textures: this.renderer?.info?.memory?.textures || 0,
       quality: this.graphicsQuality,
-      entities: this.getEntitiesCount(),
+      dpr: currentDpr,
+      resolution: `${Math.round(size.x)}x${Math.round(size.y)}`,
+      jsHeapMb,
+      entities: {
+        passengers: this.passengers.length,
+        taxis: this.taxis.length,
+        npcs: this.npcs.length,
+        obstacles: this.urbanObstacles.length,
+        particles: this.particles.length,
+      },
     };
   }
 
@@ -1991,22 +2049,43 @@ export class GameEngine {
     this.graphicsQuality = quality;
     if (!this.renderer) return;
 
-    const baseDpr = window.devicePixelRatio || 1;
-    const targetDpr = quality === 'LOW' ? 1.0 : quality === 'HIGH' ? Math.min(baseDpr, 1.75) : Math.min(baseDpr, 1.25);
-    this.renderer.setPixelRatio(targetDpr);
+    // Determine strict DPR bounds based on device profile and quality
+    const minDpr = this.deviceProfile.isMobile
+      ? (quality === 'LOW' ? 0.75 : 0.85)
+      : (quality === 'LOW' ? 0.85 : 1.0);
+    const maxDpr = this.deviceProfile.isMobile
+      ? (quality === 'LOW' ? 0.90 : quality === 'MEDIUM' ? 1.0 : 1.15)
+      : (quality === 'LOW' ? 1.0 : quality === 'MEDIUM' ? 1.25 : Math.min(this.deviceProfile.nativeDpr, 1.5));
 
-    if (quality === 'LOW') {
+    if (this.dynamicResolutionScaler) {
+      this.dynamicResolutionScaler.setQualityBounds(minDpr, maxDpr);
+      this.renderer.setPixelRatio(this.dynamicResolutionScaler.getCurrentDpr());
+    } else {
+      this.renderer.setPixelRatio(maxDpr);
+    }
+
+    const shadowsEnabled = this.deviceProfile.isMobile
+      ? (quality === 'HIGH')
+      : (quality !== 'LOW');
+
+    if (!shadowsEnabled) {
       this.renderer.shadowMap.enabled = false;
       if (this.dirLight) this.dirLight.castShadow = false;
+      if (this.roadMesh) this.roadMesh.receiveShadow = false;
+      if (this.sidewalkMesh) this.sidewalkMesh.receiveShadow = false;
     } else {
       this.renderer.shadowMap.enabled = true;
-      this.renderer.shadowMap.type = quality === 'HIGH' ? THREE.PCFSoftShadowMap : THREE.BasicShadowMap;
+      this.renderer.shadowMap.type = (quality === 'HIGH' && !this.deviceProfile.isMobile)
+        ? THREE.PCFSoftShadowMap
+        : THREE.BasicShadowMap;
       if (this.dirLight) {
         this.dirLight.castShadow = true;
-        const res = quality === 'HIGH' ? 1024 : 512;
+        const res = (quality === 'HIGH' && !this.deviceProfile.isMobile) ? 1024 : 512;
         this.dirLight.shadow.mapSize.width = res;
         this.dirLight.shadow.mapSize.height = res;
       }
+      if (this.roadMesh) this.roadMesh.receiveShadow = true;
+      if (this.sidewalkMesh) this.sidewalkMesh.receiveShadow = true;
     }
   }
 
@@ -2879,7 +2958,8 @@ export class GameEngine {
 
     // Spawn new passengers periodically
     this.passengerSpawnTimer += delta;
-    const spawnRate = this.isRushHour ? 2.5 : 5.0;
+    // Faster replenishment if count drops below 4, preventing dead paragens
+    const spawnRate = this.passengers.length < 4 ? 1.5 : (this.isRushHour ? 2.5 : 5.0);
     if (this.passengerSpawnTimer >= spawnRate) {
       this.passengerSpawnTimer = 0;
       this.spawnPassenger();
@@ -2887,7 +2967,8 @@ export class GameEngine {
 
     // Spawn new taxis periodically
     this.taxiSpawnTimer += delta;
-    if (this.taxiSpawnTimer >= 8.0) {
+    const taxiSpawnRate = this.taxis.length === 0 ? 2.0 : 8.0;
+    if (this.taxiSpawnTimer >= taxiSpawnRate) {
       this.taxiSpawnTimer = 0;
       this.spawnTaxi();
     }

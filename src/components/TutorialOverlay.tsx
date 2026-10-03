@@ -61,6 +61,42 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
   const [isMinimized, setIsMinimized] = useState(false);
   const animFrameRef = useRef<number | null>(null);
 
+  // Initial mounting trigger: play friendly cue when tutorial mounts
+  useEffect(() => {
+    soundManager.playLevelUp();
+  }, []);
+
+  // When step changes, ensure guidance bubble is expanded and sound cue plays
+  useEffect(() => {
+    setIsMinimized(false);
+    if (currentStep === TutorialStep.INTRO) {
+      setStaminaExplained(false);
+      setFeedbackToast(null);
+    } else {
+      soundManager.playClick();
+    }
+  }, [currentStep]);
+
+  // Handle RUN_STAMINA step progression when player runs or via timeout fallback
+  useEffect(() => {
+    if (currentStep !== TutorialStep.RUN_STAMINA) return;
+
+    const interval = setInterval(() => {
+      if (engine && engine.isRunning) {
+        setStaminaExplained(true);
+      }
+    }, 150);
+
+    const timer = setTimeout(() => {
+      setStaminaExplained(true);
+    }, 3000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timer);
+    };
+  }, [currentStep, engine]);
+
   // Trigger feedback with sound and haptic
   const showFeedback = useCallback((text: string) => {
     setFeedbackToast(text);
@@ -392,9 +428,23 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
                     <span>{staminaExplained ? 'ENERGIA E RECUPERAÇÃO' : 'CORRER COM VELOCIDADE'}</span>
                   </h4>
                   {!staminaExplained ? (
-                    <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
-                      Pressiona o botão azul <strong className="text-cyan-300">CORRER [Shift]</strong> para acelerar.
-                    </p>
+                    <div>
+                      <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
+                        Pressiona o botão azul <strong className="text-cyan-300">CORRER [Shift]</strong> para acelerar.
+                      </p>
+                      <div className="flex justify-end mt-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundManager.playClick();
+                            setStaminaExplained(true);
+                          }}
+                          className="bg-[#ffd700] text-[#161c28] font-space font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg border border-[#161c28] btn-press cursor-pointer"
+                        >
+                          EXPERIMENTEI ➔
+                        </button>
+                      </div>
+                    </div>
                   ) : (
                     <div>
                       <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">

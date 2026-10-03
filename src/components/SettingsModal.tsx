@@ -24,10 +24,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
     onSettingsChange?.(updated);
   };
 
+  const handleSfxVolumeChange = (vol: number) => {
+    const updated = { ...settings, sfxVolume: vol };
+    soundManager.setSfxVolume(vol);
+    setSettings(updated);
+    saveSettings(updated);
+    onSettingsChange?.(updated);
+  };
+
   const handleToggleMusic = () => {
     soundManager.playClick();
     const updated = { ...settings, musicEnabled: !settings.musicEnabled };
     soundManager.setMusicMuted(!updated.musicEnabled);
+    setSettings(updated);
+    saveSettings(updated);
+    onSettingsChange?.(updated);
+  };
+
+  const handleMusicVolumeChange = (vol: number) => {
+    const updated = { ...settings, musicVolume: vol };
+    soundManager.setMusicVolume(vol);
     setSettings(updated);
     saveSettings(updated);
     onSettingsChange?.(updated);
@@ -87,34 +103,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose, onSetting
         </div>
 
         <div className="flex flex-col gap-2.5 w-full mb-4">
-          <div className="flex justify-between items-center bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
-            <span className="font-space font-bold text-xs md:text-sm text-[#161c28] flex items-center gap-2">
-              <span className="material-symbols-outlined text-lg">volume_up</span>
-              {isPT ? 'Efeitos Sonoros (SFX)' : 'Sound Effects (SFX)'}
-            </span>
-            <button
-              onClick={handleToggleSound}
-              className={`px-3 py-1 rounded-xl border-2 border-[#161c28] font-space font-bold text-xs uppercase ${
-                settings.soundEnabled ? 'bg-[#ffd700]' : 'bg-slate-200'
-              }`}
-            >
-              {settings.soundEnabled ? (isPT ? 'LIGADO' : 'ON') : isPT ? 'DESLIGADO' : 'OFF'}
-            </button>
+          <div className="flex flex-col gap-1.5 bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
+            <div className="flex justify-between items-center">
+              <span className="font-space font-bold text-xs md:text-sm text-[#161c28] flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg">volume_up</span>
+                {isPT ? 'Efeitos Sonoros (SFX)' : 'Sound Effects (SFX)'}
+              </span>
+              <button
+                onClick={handleToggleSound}
+                className={`px-3 py-1 rounded-xl border-2 border-[#161c28] font-space font-bold text-xs uppercase ${
+                  settings.soundEnabled ? 'bg-[#ffd700]' : 'bg-slate-200'
+                }`}
+              >
+                {settings.soundEnabled ? (isPT ? 'LIGADO' : 'ON') : isPT ? 'DESLIGADO' : 'OFF'}
+              </button>
+            </div>
+            {settings.soundEnabled && (
+              <div className="flex items-center gap-2 pt-1 border-t border-slate-200">
+                <span className="text-[10px] font-space font-bold text-slate-500 w-14">
+                  {Math.round((settings.sfxVolume ?? 1.0) * 100)}%
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={settings.sfxVolume ?? 1.0}
+                  onChange={(e) => handleSfxVolumeChange(parseFloat(e.target.value))}
+                  className="w-full accent-[#fe6b00] cursor-pointer h-1.5 bg-slate-300 rounded-lg"
+                />
+              </div>
+            )}
           </div>
 
-          <div className="flex justify-between items-center bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
-            <span className="font-space font-bold text-xs md:text-sm text-[#161c28] flex items-center gap-2">
-              <span className="material-symbols-outlined text-lg">music_note</span>
-              {isPT ? 'Música de Fundo' : 'Background Music'}
-            </span>
-            <button
-              onClick={handleToggleMusic}
-              className={`px-3 py-1 rounded-xl border-2 border-[#161c28] font-space font-bold text-xs uppercase ${
-                settings.musicEnabled ? 'bg-[#ffd700]' : 'bg-slate-200'
-              }`}
-            >
-              {settings.musicEnabled ? (isPT ? 'LIGADO' : 'ON') : isPT ? 'DESLIGADO' : 'OFF'}
-            </button>
+          <div className="flex flex-col gap-1.5 bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
+            <div className="flex justify-between items-center">
+              <span className="font-space font-bold text-xs md:text-sm text-[#161c28] flex items-center gap-2">
+                <span className="material-symbols-outlined text-lg">music_note</span>
+                {isPT ? 'Música de Fundo' : 'Background Music'}
+              </span>
+              <button
+                onClick={handleToggleMusic}
+                className={`px-3 py-1 rounded-xl border-2 border-[#161c28] font-space font-bold text-xs uppercase ${
+                  settings.musicEnabled ? 'bg-[#ffd700]' : 'bg-slate-200'
+                }`}
+              >
+                {settings.musicEnabled ? (isPT ? 'LIGADO' : 'ON') : isPT ? 'DESLIGADO' : 'OFF'}
+              </button>
+            </div>
+            {settings.musicEnabled && (
+              <div className="flex items-center gap-2 pt-1 border-t border-slate-200">
+                <span className="text-[10px] font-space font-bold text-slate-500 w-14">
+                  {Math.round((settings.musicVolume ?? 0.7) * 100)}%
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={settings.musicVolume ?? 0.7}
+                  onChange={(e) => handleMusicVolumeChange(parseFloat(e.target.value))}
+                  className="w-full accent-[#fe6b00] cursor-pointer h-1.5 bg-slate-300 rounded-lg"
+                />
+              </div>
+            )}
           </div>
 
           <div className="flex justify-between items-center bg-[#f1f3ff] p-3 rounded-2xl border border-slate-300">
