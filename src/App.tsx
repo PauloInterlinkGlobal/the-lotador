@@ -152,11 +152,11 @@ export default function App() {
   // Sync engine pause state
   useEffect(() => {
     if (engineRef.current) {
-      engineRef.current.isPaused = isPaused || activeModal !== null;
+      engineRef.current.isPaused = isPaused || activeModal !== null || (isTutorial && tutorialStep === TutorialStep.INTRO);
     }
-  }, [isPaused, activeModal]);
+  }, [isPaused, activeModal, isTutorial, tutorialStep]);
 
-  // Match Timer Interval
+  // Match Timer Interval (strictly frozen during tutorial mode)
   useEffect(() => {
     let timer: any = null;
     if (
@@ -164,7 +164,7 @@ export default function App() {
       !isPaused &&
       !activeModal &&
       timerSeconds > 0 &&
-      !(isTutorial && tutorialStep === TutorialStep.INTRO)
+      !isTutorial
     ) {
       timer = setInterval(() => {
         setTimerSeconds((prev) => {
@@ -183,7 +183,7 @@ export default function App() {
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [screen, isPaused, activeModal, timerSeconds, isTutorial, tutorialStep]);
+  }, [screen, isPaused, activeModal, timerSeconds, isTutorial]);
 
   // Sync Taxis and Passengers for HUD overlay with shallow equality guards
   useEffect(() => {
@@ -351,21 +351,14 @@ export default function App() {
             onDisputeUpdate: (dispute) => {
               setActiveDispute(dispute ? { ...dispute } : null);
             },
-            onPlayerMove: (dist) => {
-              if (runTutorial) {
-                setTutorialStep((prev) => {
-                  if (prev === TutorialStep.MOVE && dist >= 2.8) {
-                    return TutorialStep.APPROACH_PASSENGER;
-                  }
-                  return prev;
-                });
-              }
+            onPlayerMove: () => {
+              // Smooth movement tracking handled by engine
             },
             onPassengerFollowed: () => {
               if (runTutorial) {
                 setTutorialStep((prev) => {
-                  if (prev === TutorialStep.CALL_PASSENGER) {
-                    return TutorialStep.LEAD_TO_TAXI;
+                  if (prev === TutorialStep.CHAMAR || prev === TutorialStep.INTRO) {
+                    return TutorialStep.EMBARCAR;
                   }
                   return prev;
                 });
@@ -386,8 +379,8 @@ export default function App() {
               );
               if (runTutorial) {
                 setTutorialStep((prev) => {
-                  if (prev === TutorialStep.BOARD_TAXI) {
-                    return TutorialStep.SCORE_MONEY;
+                  if (prev === TutorialStep.CONDUZIR || prev === TutorialStep.EMBARCAR) {
+                    return TutorialStep.ENTREGAR;
                   }
                   return prev;
                 });
@@ -434,16 +427,7 @@ export default function App() {
                 )
               );
             },
-            onPlayerRunStart: () => {
-              if (runTutorial) {
-                setTutorialStep((prev) => {
-                  if (prev === TutorialStep.RUN_STAMINA) {
-                    return TutorialStep.OBJECTIVES;
-                  }
-                  return prev;
-                });
-              }
-            },
+            onPlayerRunStart: () => {},
           },
           { isTutorial: runTutorial, levelConfig: selectedLevel }
         );
@@ -451,10 +435,9 @@ export default function App() {
         engineRef.current = engine;
         setEngineInstance(engine);
 
-        // Ensure isTutorial and TutorialStep.INTRO visibility state are strictly asserted upon engine mount/re-init
+        // Ensure isTutorial flag is active
         if (runTutorial) {
           setIsTutorial(true);
-          setTutorialStep(TutorialStep.INTRO);
         }
 
         if (gameSettings.graphicsQuality) {
@@ -602,24 +585,23 @@ export default function App() {
   };
 
   const tutorialHighlight = isTutorial
-    ? tutorialStep === TutorialStep.MOVE
-      ? 'JOYSTICK'
-      : tutorialStep === TutorialStep.CALL_PASSENGER
+    ? tutorialStep === TutorialStep.CHAMAR
       ? 'CALL'
-      : tutorialStep === TutorialStep.SCORE_MONEY
-      ? 'MONEY'
-      : tutorialStep === TutorialStep.RUN_STAMINA
-      ? 'RUN'
-      : tutorialStep === TutorialStep.OBJECTIVES
-      ? 'OBJECTIVES'
-      : tutorialStep === TutorialStep.TIMER
-      ? 'TIMER'
+      : tutorialStep === TutorialStep.CONDUZIR
+      ? 'CALL'
       : null
     : null;
 
   const handleCallAction = useCallback(() => {
     engineRef.current?.triggerCallAction();
-  }, []);
+    if (isTutorial && (tutorialStep === TutorialStep.CHAMAR || tutorialStep === TutorialStep.INTRO)) {
+      setTimeout(() => {
+        if (engineRef.current?.passengers.some((p) => p.followedBy === 'PLAYER' && p.state === 'FOLLOWING')) {
+          setTutorialStep(TutorialStep.EMBARCAR);
+        }
+      }, 100);
+    }
+  }, [isTutorial, tutorialStep]);
 
   const handleInteractAction = useCallback(() => {
     engineRef.current?.triggerInteractAction();
@@ -719,11 +701,10 @@ export default function App() {
               taxisLoaded={taxisLoaded}
               money={matchKz}
               onStepChange={(nextStep) => setTutorialStep(nextStep)}
-              onOpenObjectives={() => {
-                setIsPaused(true);
-                setActiveModal('MISSIONS');
-              }}
               onCompleteTutorial={() => {
+                endMatch(true);
+              }}
+              onSkipTutorial={() => {
                 endMatch(true);
               }}
             />

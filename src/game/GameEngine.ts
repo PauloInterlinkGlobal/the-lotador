@@ -1455,7 +1455,7 @@ export class GameEngine {
         t.route === followingP.destination &&
         (t.state === 'WAITING' || t.state === 'LOADING') &&
         t.currentPassengers < t.capacity &&
-        Math.hypot(t.position.x - this.playerPos.x, t.position.z - this.playerPos.z) <= 4.2
+        Math.hypot(t.position.x - this.playerPos.x, t.position.z - this.playerPos.z) <= (this.isTutorial ? 4.8 : 4.2)
     );
 
     return {
@@ -1829,7 +1829,7 @@ export class GameEngine {
     // Particle effect around player
     this.spawnSpriteParticle('effect_megaphone', this.playerPos, 2.2, 1.6);
 
-    const radius = 5.0 + this.playerStats.upgradeVoice * 0.8;
+    const radius = (this.isTutorial ? 8.0 : 5.0) + this.playerStats.upgradeVoice * 0.8;
 
     // Speak contextual phrase
     const phrases = ['Viana!', 'Talatona!', 'Centro!', 'Entra, entra!', 'Táxi a sair!'];
@@ -1874,9 +1874,9 @@ export class GameEngine {
     const matchingTaxi = this.taxis.find(
       (t) =>
         t.route === followingP.destination &&
-        t.state === 'WAITING' &&
+        (t.state === 'WAITING' || t.state === 'LOADING') &&
         t.currentPassengers < t.capacity &&
-        Math.hypot(t.position.x - this.playerPos.x, t.position.z - this.playerPos.z) <= 4.0
+        Math.hypot(t.position.x - this.playerPos.x, t.position.z - this.playerPos.z) <= (this.isTutorial ? 4.8 : 4.0)
     );
 
     if (matchingTaxi) {
@@ -2787,8 +2787,8 @@ export class GameEngine {
       let targetVelX = 0;
       let targetVelZ = 0;
 
-      // Patience timer
-      if (p.state === 'WAITING' || p.state === 'SEARCHING') {
+      // Patience timer (disabled in tutorial so learning player is never rushed)
+      if (!this.isTutorial && (p.state === 'WAITING' || p.state === 'SEARCHING')) {
         p.patience -= delta;
         if (p.patience <= 0) {
           // Passenger leaves in frustration ⌛
@@ -2956,21 +2956,23 @@ export class GameEngine {
       }
     }
 
-    // Spawn new passengers periodically
-    this.passengerSpawnTimer += delta;
-    // Faster replenishment if count drops below 4, preventing dead paragens
-    const spawnRate = this.passengers.length < 4 ? 1.5 : (this.isRushHour ? 2.5 : 5.0);
-    if (this.passengerSpawnTimer >= spawnRate) {
-      this.passengerSpawnTimer = 0;
-      this.spawnPassenger();
-    }
+    // Spawn new passengers periodically (disabled in tutorial to prevent uncontrolled passenger count inflation)
+    if (!this.isTutorial) {
+      this.passengerSpawnTimer += delta;
+      // Faster replenishment if count drops below 4, preventing dead paragens
+      const spawnRate = this.passengers.length < 4 ? 1.5 : (this.isRushHour ? 2.5 : 5.0);
+      if (this.passengerSpawnTimer >= spawnRate) {
+        this.passengerSpawnTimer = 0;
+        this.spawnPassenger();
+      }
 
-    // Spawn new taxis periodically
-    this.taxiSpawnTimer += delta;
-    const taxiSpawnRate = this.taxis.length === 0 ? 2.0 : 8.0;
-    if (this.taxiSpawnTimer >= taxiSpawnRate) {
-      this.taxiSpawnTimer = 0;
-      this.spawnTaxi();
+      // Spawn new taxis periodically
+      this.taxiSpawnTimer += delta;
+      const taxiSpawnRate = this.taxis.length === 0 ? 2.0 : 8.0;
+      if (this.taxiSpawnTimer >= taxiSpawnRate) {
+        this.taxiSpawnTimer = 0;
+        this.spawnTaxi();
+      }
     }
   }
 

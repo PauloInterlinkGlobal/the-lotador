@@ -1,26 +1,28 @@
 /**
- * LOTADOR - Interactive Tutorial Controller & Overlay
- * Guides the player step-by-step through Level 1 core mechanics using real gameplay systems.
+ * LOTADOR - Máquina de Estados do Tutorial Interativo
+ * 
+ * Sequência estrita de 6 estados:
+ * 1. INTRO: Apresentação do papel do Lotador na paragem de Luanda (Jogo e Timer pausados)
+ * 2. CHAMAR: Chamar o passageiro com o botão amarelo CHAMAR [E]
+ * 3. EMBARCAR: Conduzir o passageiro até ao candongueiro azul (Táxi de Viana)
+ * 4. CONDUZIR: Posicionar-se na porta do táxi e acionar LOTAR [Espaço]
+ * 5. ENTREGAR: Confirmação de embarque e recolha de Kz/XP
+ * 6. CONCLUIDO: Celebração com confetes, recompensa e início de jogo normal
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import confetti from 'canvas-confetti';
 import { GameEngine } from '../game/GameEngine';
-import { Passenger, Taxi } from '../types/game';
 import { soundManager } from '../utils/audio';
 import { SpriteIcon } from './SpriteIcon';
 
 export enum TutorialStep {
   INTRO = 'INTRO',
-  MOVE = 'MOVE',
-  APPROACH_PASSENGER = 'APPROACH_PASSENGER',
-  CALL_PASSENGER = 'CALL_PASSENGER',
-  LEAD_TO_TAXI = 'LEAD_TO_TAXI',
-  BOARD_TAXI = 'BOARD_TAXI',
-  SCORE_MONEY = 'SCORE_MONEY',
-  RUN_STAMINA = 'RUN_STAMINA',
-  OBJECTIVES = 'OBJECTIVES',
-  TIMER = 'TIMER',
-  FREE_PLAY = 'FREE_PLAY',
+  CHAMAR = 'CHAMAR',
+  EMBARCAR = 'EMBARCAR',
+  CONDUZIR = 'CONDUZIR',
+  ENTREGAR = 'ENTREGAR',
+  CONCLUIDO = 'CONCLUIDO',
 }
 
 interface TutorialOverlayProps {
@@ -30,21 +32,21 @@ interface TutorialOverlayProps {
   taxisLoaded: number;
   money: number;
   onStepChange: (nextStep: TutorialStep) => void;
-  onOpenObjectives: () => void;
   onCompleteTutorial: () => void;
+  onSkipTutorial?: () => void;
 }
 
 export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
   engine,
   currentStep,
   passengersServed,
-  taxisLoaded,
-  money,
+  taxisLoaded: _taxisLoaded,
+  money: _money,
   onStepChange,
-  onOpenObjectives,
   onCompleteTutorial,
+  onSkipTutorial,
 }) => {
-  // 3D projected screen positions for dynamic markers
+  // Posições 3D projetadas na tela para os indicadores visuais
   const [passengerMarker, setPassengerMarker] = useState<{ x: number; y: number; visible: boolean }>({
     x: 0,
     y: 0,
@@ -57,47 +59,25 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
   });
 
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
-  const [staminaExplained, setStaminaExplained] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const animFrameRef = useRef<number | null>(null);
+  const hasTriggeredVictoryRef = useRef(false);
 
-  // Initial mounting trigger: play friendly cue when tutorial mounts
-  useEffect(() => {
-    soundManager.playLevelUp();
-  }, []);
-
-  // When step changes, ensure guidance bubble is expanded and sound cue plays
+  // Som ao mudar de etapa e reset de minimização
   useEffect(() => {
     setIsMinimized(false);
     if (currentStep === TutorialStep.INTRO) {
-      setStaminaExplained(false);
       setFeedbackToast(null);
+      hasTriggeredVictoryRef.current = false;
+      soundManager.playLevelUp();
+    } else if (currentStep === TutorialStep.CONCLUIDO) {
+      soundManager.playTaxiFull();
     } else {
       soundManager.playClick();
     }
   }, [currentStep]);
 
-  // Handle RUN_STAMINA step progression when player runs or via timeout fallback
-  useEffect(() => {
-    if (currentStep !== TutorialStep.RUN_STAMINA) return;
-
-    const interval = setInterval(() => {
-      if (engine && engine.isRunning) {
-        setStaminaExplained(true);
-      }
-    }, 150);
-
-    const timer = setTimeout(() => {
-      setStaminaExplained(true);
-    }, 3000);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timer);
-    };
-  }, [currentStep, engine]);
-
-  // Trigger feedback with sound and haptic
+  // Mensagem temporária com som de moeda
   const showFeedback = useCallback((text: string) => {
     setFeedbackToast(text);
     soundManager.playCoin();
@@ -107,26 +87,34 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
     }, 2400);
   }, []);
 
-  // Update in-world 3D pointer projections
+  // Projeção contínua dos marcadores 3D no ecrã
   useEffect(() => {
     if (!engine) return;
 
     const updatePointers = () => {
-      // Find tutorial passenger
+      // 1. Marcador do Passageiro de Viana (Ativo em CHAMAR)
       const targetPassenger =
         engine.passengers.find((p) => p.id === engine.tutorialPassengerId) ||
         engine.passengers.find((p) => p.destination === 'VIANA');
 
-      if (targetPassenger && (currentStep === TutorialStep.APPROACH_PASSENGER || currentStep === TutorialStep.CALL_PASSENGER)) {
+      const shouldShowPassenger = targetPassenger && currentStep === TutorialStep.CHAMAR;
+
+      if (shouldShowPassenger && targetPassenger) {
         const pScreen = engine.toScreenPosition(targetPassenger.position);
         setPassengerMarker(pScreen);
       } else {
         setPassengerMarker((prev) => (prev.visible ? { ...prev, visible: false } : prev));
       }
 
-      // Find VIANA taxi
-      const targetTaxi = engine.taxis.find((t) => t.route === 'VIANA' && t.state === 'WAITING');
-      if (targetTaxi && (currentStep === TutorialStep.LEAD_TO_TAXI || currentStep === TutorialStep.BOARD_TAXI)) {
+      // 2. Marcador do Candongueiro de Viana (Ativo em EMBARCAR e CONDUZIR)
+      const targetTaxi = engine.taxis.find(
+        (t) => t.route === 'VIANA' && (t.state === 'WAITING' || t.state === 'LOADING')
+      );
+
+      const shouldShowTaxi =
+        targetTaxi && (currentStep === TutorialStep.EMBARCAR || currentStep === TutorialStep.CONDUZIR);
+
+      if (shouldShowTaxi && targetTaxi) {
         const tScreen = engine.toScreenPosition(targetTaxi.position);
         setTaxiMarker(tScreen);
       } else {
@@ -145,165 +133,179 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
     };
   }, [engine, currentStep]);
 
-  // Step 2: Check Distance to Passenger in APPROACH_PASSENGER
+  // Observador contínuo de estado para transições automáticas resilientes
   useEffect(() => {
-    if (!engine || currentStep !== TutorialStep.APPROACH_PASSENGER) return;
+    if (!engine) return;
 
-    const checkInterval = setInterval(() => {
-      const targetPassenger =
-        engine.passengers.find((p) => p.id === engine.tutorialPassengerId) ||
-        engine.passengers.find((p) => p.destination === 'VIANA');
-
-      if (targetPassenger) {
-        const dist = Math.hypot(
-          engine.playerPos.x - targetPassenger.position.x,
-          engine.playerPos.z - targetPassenger.position.z
+    const interval = setInterval(() => {
+      // Se em CHAMAR e o passageiro já começou a seguir o jogador:
+      if (currentStep === TutorialStep.CHAMAR) {
+        const hasFollower = engine.passengers.some(
+          (p) => p.followedBy === 'PLAYER' && p.state === 'FOLLOWING'
         );
-        if (dist <= 4.0) {
-          showFeedback('Perfeito! Estás perto do passageiro.');
-          clearInterval(checkInterval);
-          setTimeout(() => {
-            onStepChange(TutorialStep.CALL_PASSENGER);
-          }, 900);
+        if (hasFollower) {
+          showFeedback('Passageiro a seguir-te! Leva-o ao táxi.');
+          onStepChange(TutorialStep.EMBARCAR);
         }
       }
-    }, 150);
 
-    return () => clearInterval(checkInterval);
-  }, [engine, currentStep, onStepChange, showFeedback]);
+      // Se em EMBARCAR e o jogador aproxima-se do táxi de Viana (<= 4.8m):
+      if (currentStep === TutorialStep.EMBARCAR) {
+        if (passengersServed >= 1) {
+          onStepChange(TutorialStep.ENTREGAR);
+          return;
+        }
 
-  // Step 4: Check distance to Taxi with follower in LEAD_TO_TAXI
-  useEffect(() => {
-    if (!engine || currentStep !== TutorialStep.LEAD_TO_TAXI) return;
-
-    const checkInterval = setInterval(() => {
-      const hasFollower = engine.passengers.some(
-        (p) => p.followedBy === 'PLAYER' && p.state === 'FOLLOWING'
-      );
-      const targetTaxi = engine.taxis.find((t) => t.route === 'VIANA' && t.state === 'WAITING');
-
-      if (hasFollower && targetTaxi) {
-        const dist = Math.hypot(
-          engine.playerPos.x - targetTaxi.position.x,
-          engine.playerPos.z - targetTaxi.position.z
+        const targetTaxi = engine.taxis.find(
+          (t) => t.route === 'VIANA' && (t.state === 'WAITING' || t.state === 'LOADING')
         );
-        if (dist <= 4.2) {
-          showFeedback('Chegaste à paragem do táxi!');
-          clearInterval(checkInterval);
-          setTimeout(() => {
-            onStepChange(TutorialStep.BOARD_TAXI);
-          }, 900);
+
+        if (targetTaxi) {
+          const dist = Math.hypot(
+            engine.playerPos.x - targetTaxi.position.x,
+            engine.playerPos.z - targetTaxi.position.z
+          );
+          if (dist <= 4.8) {
+            showFeedback('Chegaste à carrinha! Toca em LOTAR!');
+            onStepChange(TutorialStep.CONDUZIR);
+          }
         }
       }
-    }, 150);
 
-    return () => clearInterval(checkInterval);
-  }, [engine, currentStep, onStepChange, showFeedback]);
-
-  // Check victory condition in FREE_PLAY
-  useEffect(() => {
-    if (currentStep === TutorialStep.FREE_PLAY) {
-      // Level 1 tutorial objective: serve at least 2 passengers and load 1 taxi
-      if (passengersServed >= 2 || taxisLoaded >= 1) {
-        showFeedback('🏆 TODOS OS OBJETIVOS CUMPRIDOS!');
-        setTimeout(() => {
-          onCompleteTutorial();
-        }, 1200);
+      // Se em CONDUZIR e o passageiro embarcou:
+      if (currentStep === TutorialStep.CONDUZIR) {
+        if (passengersServed >= 1) {
+          showFeedback('Embarque concluído! +150 Kz!');
+          onStepChange(TutorialStep.ENTREGAR);
+        }
       }
+    }, 120);
+
+    return () => clearInterval(interval);
+  }, [engine, currentStep, passengersServed, onStepChange, showFeedback]);
+
+  // Efeito comemorativo ao atingir CONCLUIDO
+  useEffect(() => {
+    if (currentStep === TutorialStep.CONCLUIDO && !hasTriggeredVictoryRef.current) {
+      hasTriggeredVictoryRef.current = true;
+      confetti({
+        particleCount: 100,
+        spread: 80,
+        origin: { y: 0.6 },
+        colors: ['#ffd700', '#fe6b00', '#006399', '#ffffff'],
+      });
     }
-  }, [currentStep, passengersServed, taxisLoaded, onCompleteTutorial, showFeedback]);
+  }, [currentStep]);
 
   return (
-    <div className="absolute inset-0 pointer-events-none z-30 overflow-hidden select-none">
+    <div className="absolute inset-0 pointer-events-none z-40 select-none overflow-hidden font-work">
       {/* ─────────────────────────────────────────────────────────────
-          IN-WORLD 3D POINTER MARKERS (Screen projected)
+          MARCADORES 3D PROJETADOS NO ECRÃ
           ───────────────────────────────────────────────────────────── */}
 
-      {/* Target Passenger Marker */}
+      {/* Marcador do Passageiro Alvo */}
       {passengerMarker.visible && (
         <div
-          className="absolute -translate-x-1/2 -translate-y-full transition-transform duration-75 flex flex-col items-center pointer-events-none"
+          className="absolute -translate-x-1/2 -translate-y-full transition-transform duration-75 flex flex-col items-center pointer-events-none z-30"
           style={{ left: `${passengerMarker.x}px`, top: `${passengerMarker.y - 12}px` }}
         >
-          <div className="bg-[#161c28] border-2 border-[#ffd700] text-white px-2.5 py-1 rounded-full text-[11px] font-space font-bold shadow-lg flex items-center gap-1.5 animate-bounce">
+          <div className="bg-[#161c28] border-2 border-[#ffd700] text-white px-2.5 py-1 rounded-full text-[11px] font-space font-bold shadow-xl flex items-center gap-1.5 animate-bounce">
             <span className="w-2 h-2 rounded-full bg-[#ffd700] animate-ping inline-block" />
-            <span>PASSAGEIRO VIANA</span>
+            <span>PASSAGEIRO VIANA 📢</span>
           </div>
           <div className="w-0 h-0 border-x-6 border-x-transparent border-t-8 border-t-[#ffd700] mt-0.5" />
         </div>
       )}
 
-      {/* Target Taxi Marker */}
+      {/* Marcador do Candongueiro Alvo */}
       {taxiMarker.visible && (
         <div
-          className="absolute -translate-x-1/2 -translate-y-full transition-transform duration-75 flex flex-col items-center pointer-events-none"
+          className="absolute -translate-x-1/2 -translate-y-full transition-transform duration-75 flex flex-col items-center pointer-events-none z-30"
           style={{ left: `${taxiMarker.x}px`, top: `${taxiMarker.y - 12}px` }}
         >
-          <div className="bg-[#006399] border-2 border-white text-white px-3 py-1 rounded-full text-[11px] font-space font-bold shadow-lg flex items-center gap-1.5 animate-bounce">
+          <div className="bg-[#006399] border-2 border-white text-white px-3 py-1 rounded-full text-[11px] font-space font-bold shadow-xl flex items-center gap-1.5 animate-bounce">
             <SpriteIcon name="taxi_candongueiro_drive_0" className="w-4 h-3 object-contain" />
-            <span>TÁXI VIANA</span>
+            <span>CANDONGUEIRO VIANA 🚐</span>
           </div>
           <div className="w-0 h-0 border-x-6 border-x-transparent border-t-8 border-t-[#006399] mt-0.5" />
         </div>
       )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          ACTION CONFIRMATION TOAST
-          ───────────────────────────────────────────────────────────── */}
+      {/* Toast de Confirmação Rápida */}
       {feedbackToast && (
-        <div className="absolute top-[18vh] left-1/2 -translate-x-1/2 bg-[#ffd700] text-[#161c28] border-2 border-[#161c28] font-anybody font-black text-xs md:text-sm uppercase px-5 py-2 rounded-2xl shadow-xl animate-bounce pointer-events-none flex items-center gap-2">
+        <div className="absolute top-[16vh] left-1/2 -translate-x-1/2 bg-[#ffd700] text-[#161c28] border-2 border-[#161c28] font-anybody font-black text-xs md:text-sm uppercase px-5 py-2 rounded-2xl shadow-xl animate-bounce pointer-events-none flex items-center gap-2 z-50">
           <span>✨</span>
           <span>{feedbackToast}</span>
         </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          STEP 0: INTRO SPEECH BUBBLE (Discreet, Top-Right, Non-blocking)
+          1. ETAPA INTRO: MODAL INICIAL (Pausa do jogo e timer)
           ───────────────────────────────────────────────────────────── */}
       {currentStep === TutorialStep.INTRO && (
-        <div className="absolute top-[clamp(44px,6.5vh,54px)] right-3 md:right-5 max-w-[320px] w-[88vw] sm:w-[310px] pointer-events-auto z-40">
-          <div className="bg-[#161c28]/85 backdrop-blur-md border border-[#ffd700] rounded-2xl p-3 shadow-2xl text-white flex flex-col gap-2 relative">
-            <div className="flex items-center justify-between">
-              <span className="bg-[#ffd700] text-[#161c28] font-space font-extrabold text-[9px] uppercase px-2 py-0.5 rounded-md border border-[#161c28]">
-                TUTORIAL • INÍCIO
+        <div className="absolute inset-0 bg-black/65 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pointer-events-auto z-50">
+          <div className="bg-[#161c28] border-2 border-[#ffd700] rounded-3xl p-5 md:p-6 shadow-2xl max-w-sm w-full text-center flex flex-col items-center gap-3 animate-in fade-in zoom-in-95 duration-200">
+            {/* Badge de cabeçalho */}
+            <div className="flex items-center gap-2">
+              <span className="bg-[#ffd700] text-[#161c28] font-space font-black text-[10px] uppercase px-3 py-1 rounded-full border border-[#161c28] tracking-wider">
+                TUTORIAL • NÍVEL 1 (MUTAMBA)
               </span>
-              <span className="text-[11px] text-[#ffd700] font-mono font-bold">Nível 1</span>
             </div>
 
-            <div className="flex items-start gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-[#ffd700] border border-[#161c28] flex items-center justify-center shrink-0 shadow-sm mt-0.5">
-                <SpriteIcon name="logo_lotador" className="w-7 h-7 object-contain" />
-              </div>
-              <div>
-                <h3 className="font-anybody font-black text-xs text-white uppercase">
-                  BEM-VINDO AO LOTADOR!
-                </h3>
-                <p className="font-work text-[11px] text-slate-200 mt-0.5 leading-snug">
-                  Chama passageiros e conduz-os aos candongueiros certos da paragem.
-                </p>
-              </div>
+            {/* Ícone */}
+            <div className="w-16 h-16 rounded-2xl bg-[#ffd700] border-2 border-[#161c28] flex items-center justify-center shadow-lg">
+              <SpriteIcon name="logo_lotador" className="w-12 h-12 object-contain" />
             </div>
 
+            {/* Mensagem e Papel */}
+            <div>
+              <h3 className="font-anybody font-black text-lg md:text-xl text-white uppercase tracking-wide">
+                BEM-VINDO AO LOTADOR!
+              </h3>
+              <p className="font-work text-xs md:text-sm text-slate-200 mt-1 leading-relaxed">
+                Na paragem de Luanda, o teu trabalho é <strong className="text-[#ffd700]">chamar os passageiros</strong>, organizar o embarque rápido e lotar os candongueiros antes dos rivais!
+              </p>
+            </div>
+
+            {/* Botão COMEÇAR TUTORIAL */}
             <button
               type="button"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 soundManager.playClick();
-                onStepChange(TutorialStep.MOVE);
+                onStepChange(TutorialStep.CHAMAR);
               }}
-              className="w-full py-2 bg-[#ffd700] hover:bg-[#ffe16d] text-[#161c28] font-anybody font-black text-xs uppercase rounded-xl border border-[#161c28] shadow-sm btn-press cursor-pointer flex items-center justify-center gap-1.5"
+              className="w-full py-3.5 bg-[#ffd700] hover:bg-[#ffe16d] text-[#161c28] font-anybody font-black text-sm uppercase rounded-2xl sticker-border hard-shadow btn-press cursor-pointer flex items-center justify-center gap-2 shadow-lg mt-1 touch-manipulation"
             >
               <span>COMEÇAR TUTORIAL</span>
-              <span>➔</span>
+              <span className="material-symbols-outlined text-lg">arrow_forward</span>
+            </button>
+
+            {/* Botão Saltar Tutorial */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                soundManager.playClick();
+                if (onSkipTutorial) {
+                  onSkipTutorial();
+                } else {
+                  onCompleteTutorial();
+                }
+              }}
+              className="text-xs font-space font-semibold text-slate-400 hover:text-white underline cursor-pointer mt-0.5 py-1 touch-manipulation"
+            >
+              Saltar Tutorial e Jogar
             </button>
           </div>
         </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          IN-GAME GUIDANCE CARD / SPEECH BUBBLE (Compact, Top-Right Corner)
+          ETAPAS 2 A 5: CARTÃO COMPACTO DE ORIENTAÇÃO (Canto Superior Direito)
           ───────────────────────────────────────────────────────────── */}
-      {currentStep !== TutorialStep.INTRO && currentStep !== TutorialStep.FREE_PLAY && (
-        <div className="absolute top-[clamp(44px,6.5vh,54px)] right-3 md:right-5 max-w-[320px] w-[88vw] sm:w-[310px] pointer-events-auto z-40">
+      {currentStep !== TutorialStep.INTRO && currentStep !== TutorialStep.CONCLUIDO && (
+        <div className="absolute top-[clamp(48px,10vh,68px)] right-3 md:right-5 max-w-[310px] w-[86vw] sm:w-[300px] pointer-events-auto z-40">
           {isMinimized ? (
             <button
               type="button"
@@ -311,216 +313,135 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
                 soundManager.playClick();
                 setIsMinimized(false);
               }}
-              className="bg-[#161c28]/90 hover:bg-[#161c28] border border-[#ffd700] text-white px-3 py-1.5 rounded-full shadow-lg text-[11px] font-space font-bold flex items-center gap-2 cursor-pointer ml-auto"
+              className="bg-[#161c28]/95 hover:bg-[#161c28] border-2 border-[#ffd700] text-white px-3 py-1.5 rounded-full shadow-lg text-[11px] font-space font-bold flex items-center gap-2 cursor-pointer ml-auto touch-manipulation"
             >
               <span className="w-2 h-2 rounded-full bg-[#ffd700] animate-ping" />
-              <span>PASSO {getStepIndex(currentStep)}/9</span>
+              <span>PASSO {getStepNumber(currentStep)}/4</span>
               <span className="text-[#ffd700] text-xs">▼</span>
             </button>
           ) : (
-            <div className="bg-[#161c28]/85 backdrop-blur-md border border-[#ffd700]/70 rounded-2xl p-2.5 md:p-3 shadow-xl text-white flex flex-col gap-1.5">
+            <div className="bg-[#161c28]/95 backdrop-blur-md border-2 border-[#ffd700]/80 rounded-2xl p-3.5 shadow-2xl text-white flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="bg-[#ffd700] text-[#161c28] font-space font-extrabold text-[9px] uppercase px-2 py-0.5 rounded-md border border-[#161c28]">
-                  TUTORIAL • PASSO {getStepIndex(currentStep)}/9
+                  TUTORIAL • PASSO {getStepNumber(currentStep)}/4
                 </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundManager.playClick();
-                    setIsMinimized(true);
-                  }}
-                  className="text-white/60 hover:text-white text-xs px-1.5 py-0.5 rounded-md hover:bg-white/10 cursor-pointer"
-                  title="Minimizar dica"
-                >
-                  −
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundManager.playClick();
+                      if (onSkipTutorial) {
+                        onSkipTutorial();
+                      } else {
+                        onCompleteTutorial();
+                      }
+                    }}
+                    className="text-slate-400 hover:text-white text-[10px] font-space underline px-1.5 py-0.5 cursor-pointer touch-manipulation"
+                    title="Saltar Tutorial"
+                  >
+                    Saltar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundManager.playClick();
+                      setIsMinimized(true);
+                    }}
+                    className="text-white/60 hover:text-white text-xs px-1.5 py-0.5 rounded-md hover:bg-white/10 cursor-pointer touch-manipulation"
+                    title="Minimizar dica"
+                  >
+                    −
+                  </button>
+                </div>
               </div>
 
-              {/* Instruction content based on current step */}
-              {currentStep === TutorialStep.MOVE && (
+              {/* 2. ETAPA CHAMAR */}
+              {currentStep === TutorialStep.CHAMAR && (
                 <div>
-                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1">
-                    <span>🕹️</span>
-                    <span>MOVIMENTAÇÃO</span>
-                  </h4>
-                  <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
-                    Usa o <strong className="text-[#ffd700]">joystick</strong> ou teclas <strong className="text-[#ffd700]">WASD</strong> para te mover pela paragem.
-                  </p>
-                </div>
-              )}
-
-              {currentStep === TutorialStep.APPROACH_PASSENGER && (
-                <div>
-                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1">
-                    <span>👤</span>
-                    <span>ENCONTRAR PASSAGEIRO</span>
-                  </h4>
-                  <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
-                    Caminha até perto do passageiro com indicador <strong className="text-[#ffd700]">VIANA</strong>.
-                  </p>
-                </div>
-              )}
-
-              {currentStep === TutorialStep.CALL_PASSENGER && (
-                <div>
-                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1">
+                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1.5">
                     <span>📢</span>
                     <span>CHAMAR PASSAGEIRO</span>
                   </h4>
-                  <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
-                    Toca no botão amarelo <strong className="text-[#ffd700]">CHAMAR [E]</strong> para o passageiro te seguir!
+                  <p className="text-[11px] text-slate-200 font-work mt-1 leading-snug">
+                    Aproxima-te do passageiro de Viana e clica no botão amarelo <strong className="text-[#ffd700]">CHAMAR [E]</strong> para ele te seguir!
                   </p>
+                  <div className="flex justify-end mt-2">
+                    <button
+                      type="button"
+                      onClick={() => onStepChange(TutorialStep.EMBARCAR)}
+                      className="bg-white/10 hover:bg-white/20 text-[#ffd700] font-space font-bold text-[10px] uppercase px-2.5 py-1 rounded-lg border border-[#ffd700]/30 btn-press cursor-pointer touch-manipulation"
+                    >
+                      Avançar ➔
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {currentStep === TutorialStep.LEAD_TO_TAXI && (
+              {/* 3. ETAPA EMBARCAR (Levar ao táxi) */}
+              {currentStep === TutorialStep.EMBARCAR && (
                 <div>
-                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1">
+                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1.5">
                     <span>🚐</span>
-                    <span>LEVAR AO TÁXI</span>
+                    <span>LEVAR AO CANDONGUEIRO</span>
                   </h4>
-                  <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
-                    Caminha com o passageiro até à carrinha azul <strong className="text-[#ffd700]">TÁXI VIANA</strong>.
+                  <p className="text-[11px] text-slate-200 font-work mt-1 leading-snug">
+                    O passageiro está a seguir-te! Caminha em direção ao candongueiro azul <strong className="text-[#ffd700]">TÁXI VIANA</strong>.
                   </p>
+                  <div className="flex justify-end mt-2">
+                    <button
+                      type="button"
+                      onClick={() => onStepChange(TutorialStep.CONDUZIR)}
+                      className="bg-white/10 hover:bg-white/20 text-[#ffd700] font-space font-bold text-[10px] uppercase px-2.5 py-1 rounded-lg border border-[#ffd700]/30 btn-press cursor-pointer touch-manipulation"
+                    >
+                      Cheguei ➔
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {currentStep === TutorialStep.BOARD_TAXI && (
+              {/* 4. ETAPA CONDUZIR (Embarque) */}
+              {currentStep === TutorialStep.CONDUZIR && (
                 <div>
-                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1">
+                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1.5">
                     <span>🤝</span>
-                    <span>EMBARQUE</span>
+                    <span>LOTAR O TÁXI</span>
                   </h4>
-                  <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
-                    Toca em <strong className="text-[#ffd700]">EMBARCAR [Espaço]</strong> junto ao táxi para o passageiro entrar.
+                  <p className="text-[11px] text-slate-200 font-work mt-1 leading-snug">
+                    Estás na porta da carrinha! O botão mudou para <strong className="text-[#fe6b00]">LOTAR! [Espaço]</strong>. Toca nele para embarcar o passageiro!
                   </p>
+                  <div className="flex justify-end mt-2">
+                    <button
+                      type="button"
+                      onClick={() => onStepChange(TutorialStep.ENTREGAR)}
+                      className="bg-white/10 hover:bg-white/20 text-[#ffd700] font-space font-bold text-[10px] uppercase px-2.5 py-1 rounded-lg border border-[#ffd700]/30 btn-press cursor-pointer touch-manipulation"
+                    >
+                      Embarcar ➔
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {currentStep === TutorialStep.SCORE_MONEY && (
+              {/* 5. ETAPA ENTREGAR (Confirmação de pagamento) */}
+              {currentStep === TutorialStep.ENTREGAR && (
                 <div>
-                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1">
+                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1.5">
                     <span>💰</span>
-                    <span>GANHOS EM KWANZAS</span>
+                    <span>PAGAMENTO RECEBIDO!</span>
                   </h4>
-                  <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
-                    Excelente! Ganhaste <strong className="text-[#ffd700]">Kz</strong> e <strong className="text-[#ffd700]">XP</strong> por cada passageiro!
+                  <p className="text-[11px] text-slate-200 font-work mt-1 leading-snug">
+                    Perfeito! O passageiro subiu na carrinha e recebeste <strong className="text-emerald-400">+150 Kz</strong> e <strong className="text-[#ffd700]">+15 XP</strong>!
                   </p>
-                  <div className="flex justify-end mt-1.5">
+                  <div className="flex justify-end mt-2">
                     <button
                       type="button"
                       onClick={() => {
                         soundManager.playClick();
-                        onStepChange(TutorialStep.RUN_STAMINA);
+                        onStepChange(TutorialStep.CONCLUIDO);
                       }}
-                      className="bg-[#ffd700] text-[#161c28] font-space font-bold text-[11px] uppercase px-2.5 py-1 rounded-lg border border-[#161c28] btn-press cursor-pointer"
+                      className="bg-[#ffd700] hover:bg-[#ffe16d] text-[#161c28] font-space font-black text-[11px] uppercase px-3 py-1.5 rounded-lg border border-[#161c28] btn-press cursor-pointer touch-manipulation shadow-md flex items-center gap-1"
                     >
-                      CONTINUAR ➔
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {currentStep === TutorialStep.RUN_STAMINA && (
-                <div>
-                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1">
-                    <span>⚡</span>
-                    <span>{staminaExplained ? 'ENERGIA E RECUPERAÇÃO' : 'CORRER COM VELOCIDADE'}</span>
-                  </h4>
-                  {!staminaExplained ? (
-                    <div>
-                      <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
-                        Pressiona o botão azul <strong className="text-cyan-300">CORRER [Shift]</strong> para acelerar.
-                      </p>
-                      <div className="flex justify-end mt-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            soundManager.playClick();
-                            setStaminaExplained(true);
-                          }}
-                          className="bg-[#ffd700] text-[#161c28] font-space font-bold text-[10px] uppercase px-2 py-0.5 rounded-lg border border-[#161c28] btn-press cursor-pointer"
-                        >
-                          EXPERIMENTEI ➔
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
-                        A barra superior mostra a tua <strong className="text-[#ffd700]">Energia</strong>. Ela esgota ao correr e recupera ao andar.
-                      </p>
-                      <div className="flex justify-end mt-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            soundManager.playClick();
-                            onStepChange(TutorialStep.OBJECTIVES);
-                          }}
-                          className="bg-[#ffd700] text-[#161c28] font-space font-bold text-[11px] uppercase px-2.5 py-1 rounded-lg border border-[#161c28] btn-press cursor-pointer"
-                        >
-                          ENTENDIDO ➔
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {currentStep === TutorialStep.OBJECTIVES && (
-                <div>
-                  <h4 className="font-anybody font-black text-xs text-[#ffd700] uppercase flex items-center gap-1">
-                    <span>🎯</span>
-                    <span>CONSULTAR OBJETIVOS</span>
-                  </h4>
-                  <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
-                    Toca em <strong className="text-[#ffd700]">OBJ.</strong> no topo para ver as missões do dia.
-                  </p>
-                  <div className="flex justify-end gap-1.5 mt-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundManager.playClick();
-                        onOpenObjectives();
-                      }}
-                      className="bg-[#161c28] text-white font-space font-bold text-[10px] uppercase px-2 py-1 rounded-lg border border-white/30 btn-press cursor-pointer"
-                    >
-                      OBJETIVOS
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundManager.playClick();
-                        onStepChange(TutorialStep.TIMER);
-                      }}
-                      className="bg-[#ffd700] text-[#161c28] font-space font-bold text-[10px] uppercase px-2.5 py-1 rounded-lg border border-[#161c28] btn-press cursor-pointer"
-                    >
-                      AVANÇAR ➔
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {currentStep === TutorialStep.TIMER && (
-                <div>
-                  <h4 className="font-anybody font-black text-xs text-[#fe6b00] uppercase flex items-center gap-1">
-                    <span>⏱️</span>
-                    <span>CRONÔMETRO E VITÓRIA</span>
-                  </h4>
-                  <p className="text-[11px] text-slate-200 font-work mt-0.5 leading-snug">
-                    Cumpre os objetivos antes do <strong className="text-[#fe6b00]">tempo acabar</strong>!
-                  </p>
-                  <div className="flex justify-end mt-1.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        soundManager.playClick();
-                        showFeedback('Bons clientes! Conclui o Nível 1!');
-                        onStepChange(TutorialStep.FREE_PLAY);
-                      }}
-                      className="bg-[#ffd700] text-[#161c28] font-space font-bold text-[11px] uppercase px-3 py-1 rounded-lg border border-[#161c28] btn-press cursor-pointer"
-                    >
-                      JOGAR AGORA! 🚀
+                      <span>CONCLUIR</span>
+                      <span className="material-symbols-outlined text-sm">check</span>
                     </button>
                   </div>
                 </div>
@@ -531,16 +452,59 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          STEP 10: FREE PLAY LEVEL 1 OBJECTIVE TRACKER (Compact Top-Right Badge)
+          6. ETAPA CONCLUIDO: MODAL DE VITÓRIA E TRANSIÇÃO
           ───────────────────────────────────────────────────────────── */}
-      {currentStep === TutorialStep.FREE_PLAY && (
-        <div className="absolute top-[clamp(44px,6.5vh,54px)] right-3 md:right-5 pointer-events-none z-40">
-          <div className="bg-[#161c28]/85 backdrop-blur-xs border border-[#ffd700]/70 rounded-full px-3 py-1 shadow-md text-white flex items-center gap-2">
-            <span className="text-[#ffd700] text-xs font-space font-bold">🎯 NÍVEL 1:</span>
-            <span className="text-[11px] font-space text-slate-200">Passageiros ({Math.min(2, passengersServed)}/2)</span>
-            <span className="text-[9px] font-mono bg-[#ffd700] text-[#161c28] px-1.5 py-0.5 rounded-full font-bold">
-              {passengersServed >= 2 ? 'PRONTO!' : 'EM CURSO'}
-            </span>
+      {currentStep === TutorialStep.CONCLUIDO && (
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 pointer-events-auto z-50">
+          <div className="bg-[#161c28] border-2 border-[#ffd700] rounded-3xl p-5 md:p-6 shadow-2xl max-w-sm w-full text-center flex flex-col items-center gap-3 animate-in fade-in zoom-in-95 duration-200">
+            {/* Header Badge */}
+            <div className="flex items-center gap-2">
+              <span className="bg-emerald-500 text-white font-space font-black text-[10px] uppercase px-3 py-1 rounded-full border border-[#161c28] tracking-wider animate-pulse">
+                🏆 TUTORIAL CONCLUÍDO COM SUCESSO!
+              </span>
+            </div>
+
+            {/* Ícone */}
+            <div className="w-16 h-16 rounded-2xl bg-[#ffd700] border-2 border-[#161c28] flex items-center justify-center shadow-lg">
+              <span className="text-3xl">🚐</span>
+            </div>
+
+            {/* Mensagem e Recompensa */}
+            <div>
+              <h3 className="font-anybody font-black text-lg md:text-xl text-white uppercase tracking-wide">
+                PARABÉNS, NOVO LOTADOR!
+              </h3>
+              <p className="font-work text-xs md:text-sm text-slate-200 mt-1 leading-relaxed">
+                Já sabes a rotina: <strong className="text-[#ffd700]">Chamar</strong>, <strong className="text-[#ffd700]">Conduzir</strong> e <strong className="text-[#ffd700]">Lotar</strong>! Agora conclui os objetivos da fase antes do tempo esgotar!
+              </p>
+            </div>
+
+            {/* Recompensa */}
+            <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-2.5 flex items-center justify-around">
+              <div className="flex flex-col items-center">
+                <span className="text-[10px] font-space text-slate-400 uppercase">Bónus de Fase</span>
+                <span className="font-space font-black text-sm text-[#ffd700]">+500 Kz</span>
+              </div>
+              <div className="w-px h-7 bg-white/10" />
+              <div className="flex flex-col items-center">
+                <span className="text-[10px] font-space text-slate-400 uppercase">Fase 2</span>
+                <span className="font-space font-black text-sm text-emerald-400">DESBLOQUEADA</span>
+              </div>
+            </div>
+
+            {/* Botão de Conclusão */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                soundManager.playClick();
+                onCompleteTutorial();
+              }}
+              className="w-full py-3.5 bg-[#ffd700] hover:bg-[#ffe16d] text-[#161c28] font-anybody font-black text-sm uppercase rounded-2xl sticker-border hard-shadow btn-press cursor-pointer flex items-center justify-center gap-2 shadow-lg mt-1 touch-manipulation"
+            >
+              <span>JOGAR PARTIDA NORMAL</span>
+              <span className="material-symbols-outlined text-lg">play_arrow</span>
+            </button>
           </div>
         </div>
       )}
@@ -548,26 +512,16 @@ export const TutorialOverlay: React.FC<TutorialOverlayProps> = ({
   );
 };
 
-function getStepIndex(step: TutorialStep): number {
+function getStepNumber(step: TutorialStep): number {
   switch (step) {
-    case TutorialStep.MOVE:
+    case TutorialStep.CHAMAR:
       return 1;
-    case TutorialStep.APPROACH_PASSENGER:
+    case TutorialStep.EMBARCAR:
       return 2;
-    case TutorialStep.CALL_PASSENGER:
+    case TutorialStep.CONDUZIR:
       return 3;
-    case TutorialStep.LEAD_TO_TAXI:
+    case TutorialStep.ENTREGAR:
       return 4;
-    case TutorialStep.BOARD_TAXI:
-      return 5;
-    case TutorialStep.SCORE_MONEY:
-      return 6;
-    case TutorialStep.RUN_STAMINA:
-      return 7;
-    case TutorialStep.OBJECTIVES:
-      return 8;
-    case TutorialStep.TIMER:
-      return 9;
     default:
       return 1;
   }
