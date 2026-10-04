@@ -21,6 +21,18 @@ interface ProjectedPassengerBadge {
   followedBy: string | null;
 }
 
+interface ProjectedTaxiBadge {
+  id: string;
+  route: RouteType;
+  x: number;
+  y: number;
+  visible: boolean;
+  state: Taxi['state'];
+  currentPassengers: number;
+  capacity: number;
+  isTargetForFollowed: boolean;
+}
+
 const ROUTE_THEMES: Record<
   RouteType,
   {
@@ -77,16 +89,18 @@ const ROUTE_THEMES: Record<
 
 /**
  * WorldSpaceCanvas Component
- * Projects 3D passenger world coordinates to screen space and renders floating
- * destination badges ("World Space Canvas") directly above character heads.
- * Displays route destinations (ex: VIANA, GOLFE 2) and visual refusal alerts with error icons.
+ * Projects 3D world coordinates for both Passengers and Taxis to screen space,
+ * rendering floating destination badges ("World Space Canvas"):
+ * - Passengers: destination label (ex: VIANA, GOLFE 2), refusal alert with ❌ error icon
+ * - Taxis: candongueiro destination sign, seat counter (ex: 2/4 vagas), matching highlights
  */
 export const WorldSpaceCanvas: React.FC<WorldSpaceCanvasProps> = ({
   engine,
   passengers,
-  taxis: _taxis,
+  taxis = [],
 }) => {
   const [projectedBadges, setProjectedBadges] = useState<ProjectedPassengerBadge[]>([]);
+  const [projectedTaxis, setProjectedTaxis] = useState<ProjectedTaxiBadge[]>([]);
   const animFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -97,21 +111,28 @@ export const WorldSpaceCanvas: React.FC<WorldSpaceCanvasProps> = ({
 
       if (!engine) {
         setProjectedBadges([]);
+        setProjectedTaxis([]);
         animFrameRef.current = requestAnimationFrame(updateProjections);
         return;
       }
 
       // Query active passengers from engine or props
       const activePassengers = engine.passengers || passengers;
-      const nextBadges: ProjectedPassengerBadge[] = [];
+      const activeTaxis = engine.taxis || taxis;
 
+      // Check if player has any followers and what their destinations are
+      const followedPassenger = activePassengers.find(
+        (p) => p.followedBy === 'PLAYER' && p.state === 'FOLLOWING'
+      );
+      const followedRoute = followedPassenger ? followedPassenger.destination : null;
+
+      // 1. Project Passenger Badges
+      const nextBadges: ProjectedPassengerBadge[] = [];
       for (const p of activePassengers) {
-        // Exclude passengers who have boarded or left
         if (p.state === 'BOARDING' || p.state === 'COMPLETED' || p.state === 'LEAVING') {
           continue;
         }
 
-        // Project 3D position above character head (y offset ~1.35)
         const screenPos = engine.toScreenPosition(p.position, 1.35);
 
         if (screenPos.visible) {
@@ -131,7 +152,40 @@ export const WorldSpaceCanvas: React.FC<WorldSpaceCanvasProps> = ({
         }
       }
 
+      // 2. Project Taxi Badges
+      const nextTaxiBadges: ProjectedTaxiBadge[] = [];
+      for (const t of activeTaxis) {
+        if (t.state === 'DEPARTING' || t.state === 'GONE') {
+          continue;
+        }
+
+        // Project slightly above the van roof rack (y offset ~2.6)
+        const screenPos = engine.toScreenPosition(t.position, 2.6);
+
+        if (screenPos.visible) {
+          const isTargetForFollowed = !!(
+            followedRoute &&
+            t.route === followedRoute &&
+            t.currentPassengers < t.capacity &&
+            (t.state === 'WAITING' || t.state === 'LOADING')
+          );
+
+          nextTaxiBadges.push({
+            id: t.id,
+            route: t.route,
+            x: screenPos.x,
+            y: screenPos.y,
+            visible: true,
+            state: t.state,
+            currentPassengers: t.currentPassengers,
+            capacity: t.capacity,
+            isTargetForFollowed,
+          });
+        }
+      }
+
       setProjectedBadges(nextBadges);
+      setProjectedTaxis(nextTaxiBadges);
       animFrameRef.current = requestAnimationFrame(updateProjections);
     };
 
@@ -143,9 +197,9 @@ export const WorldSpaceCanvas: React.FC<WorldSpaceCanvasProps> = ({
         cancelAnimationFrame(animFrameRef.current);
       }
     };
-  }, [engine, passengers]);
+  }, [engine, passengers, taxis]);
 
-  if (!engine || projectedBadges.length === 0) {
+  if (!engine || (projectedBadges.length === 0 && projectedTaxis.length === 0)) {
     return null;
   }
 
@@ -154,6 +208,68 @@ export const WorldSpaceCanvas: React.FC<WorldSpaceCanvasProps> = ({
       className="pointer-events-none absolute inset-0 overflow-hidden z-25 select-none"
       aria-hidden="true"
     >
+      {/* ─────────────────────────────────────────────────────────────
+          1. TAXI DESTINATION & CAPACITY BADGES (World Space Above Van)
+          ───────────────────────────────────────────────────────────── */}
+      {projectedTaxis.map((taxi) => {
+        const theme = ROUTE_THEMES[taxi.route] || ROUTE_THEMES.VIANA;
+        const freeSeats = Math.max(0, taxi.capacity - taxi.currentPassengers);
+        const isFull = freeSeats === 0;
+
+        return (
+          <div
+            key={taxi.id}
+            className="absolute -translate-x-1/2 -translate-y-full transition-transform duration-75 will-change-transform"
+            style={{
+              left: `${taxi.x}px`,
+              top: `${taxi.y}px`,
+            }}
+          >
+            <div className="flex flex-col items-center">
+              <div
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full border-2 shadow-lg backdrop-blur-xs transition-all ${
+                  taxi.isTargetForFollowed
+                    ? 'bg-[#006dae] text-white border-[#ffd700] ring-3 ring-[#ffd700] ring-offset-1 ring-offset-black scale-110 animate-pulse'
+                    : isFull
+                    ? 'bg-[#1e293b]/90 text-slate-300 border-slate-600'
+                    : `bg-[#0f172a]/95 text-white ${theme.border} ${theme.glow}`
+                }`}
+              >
+                <span className="text-[11px] leading-none">🚐</span>
+                <span className="font-anybody font-black text-[11px] tracking-wider uppercase">
+                  {taxi.route}
+                </span>
+                <span className="text-[9px] font-space font-bold px-1.5 py-0.2 rounded-full bg-black/40 text-slate-200">
+                  {isFull ? (
+                    <span className="text-red-400 font-black">LOTADO</span>
+                  ) : (
+                    <span>
+                      <strong className="text-[#ffd700]">{freeSeats}</strong>/{taxi.capacity}
+                    </span>
+                  )}
+                </span>
+                {taxi.isTargetForFollowed && (
+                  <span className="text-[9px] font-anybody font-black bg-[#ffd700] text-[#161c28] px-1.5 py-0.2 rounded uppercase animate-bounce">
+                    LOTAR!
+                  </span>
+                )}
+              </div>
+              {/* Pointer Arrow pointing to van roof */}
+              <div
+                className={`w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] ${
+                  taxi.isTargetForFollowed
+                    ? 'border-t-[#ffd700]'
+                    : theme.border.replace('border-', 'border-t-')
+                } -mt-[1px]`}
+              />
+            </div>
+          </div>
+        );
+      })}
+
+      {/* ─────────────────────────────────────────────────────────────
+          2. PASSENGER DESTINATION BADGES (World Space Above Head)
+          ───────────────────────────────────────────────────────────── */}
       {projectedBadges.map((badge) => {
         const theme = ROUTE_THEMES[badge.destination] || ROUTE_THEMES.VIANA;
 
@@ -169,7 +285,7 @@ export const WorldSpaceCanvas: React.FC<WorldSpaceCanvasProps> = ({
             {badge.isRefused ? (
               /* Refusal Error Badge ❌ */
               <div className="flex flex-col items-center animate-bounce">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-950/90 border-2 border-red-500 text-white shadow-lg shadow-red-500/50 backdrop-blur-xs scale-105">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-950/95 border-2 border-red-500 text-white shadow-xl shadow-red-500/50 backdrop-blur-xs scale-105">
                   <span className="flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[10px] font-black leading-none">
                     ✕
                   </span>
@@ -186,7 +302,7 @@ export const WorldSpaceCanvas: React.FC<WorldSpaceCanvasProps> = ({
             ) : badge.state === 'FOLLOWING' ? (
               /* Following Player Badge ✓ */
               <div className="flex flex-col items-center">
-                <div className="flex items-center gap-1.5 px-2.5 py-0.8 rounded-full bg-emerald-950/90 border-2 border-emerald-400 text-emerald-200 shadow-md shadow-emerald-500/30 backdrop-blur-xs">
+                <div className="flex items-center gap-1.5 px-2.5 py-0.8 rounded-full bg-emerald-950/95 border-2 border-emerald-400 text-emerald-200 shadow-md shadow-emerald-500/30 backdrop-blur-xs">
                   <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-emerald-500 text-black text-[9px] font-black leading-none">
                     ✓
                   </span>
@@ -203,7 +319,7 @@ export const WorldSpaceCanvas: React.FC<WorldSpaceCanvasProps> = ({
               /* Normal Waiting World Space Badge 📍 */
               <div className="flex flex-col items-center group">
                 <div
-                  className={`flex items-center gap-1.5 px-2.5 py-0.8 rounded-full bg-[#0d1522]/90 border-2 ${theme.border} shadow-md ${theme.glow} backdrop-blur-xs transition-transform duration-100 hover:scale-110`}
+                  className={`flex items-center gap-1.5 px-2.5 py-0.8 rounded-full bg-[#0d1522]/95 border-2 ${theme.border} shadow-md ${theme.glow} backdrop-blur-xs transition-transform duration-100 hover:scale-110`}
                 >
                   <span className={`w-2 h-2 rounded-full ${theme.dot} animate-pulse`} />
                   <span

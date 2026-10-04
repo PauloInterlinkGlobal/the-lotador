@@ -26,6 +26,7 @@ import { BuildingManager } from './BuildingManager';
 import { classifyDevice, DynamicResolutionScaler } from '../utils/deviceProfile';
 import { ParagemEventManager } from './ParagemEventManager';
 import { ParagemEvent } from '../types/events';
+import { canPassengerFollow } from '../utils/gameLogic';
 
 export interface GameEngineCallbacks {
   onScoreUpdate: (kz: number, xp: number, combo: number) => void;
@@ -1633,6 +1634,11 @@ export class GameEngine {
     };
   }
 
+  // Helper to validate destination matching between a passenger and available taxis at the stop
+  public canPassengerFollow(passenger: Passenger): { canFollow: boolean; matchingTaxi: Taxi | null; reason?: string } {
+    return canPassengerFollow(passenger, this.taxis);
+  }
+
   // Edge screen indicators for off-screen taxis with active available seats
   public getOffScreenTaxiIndicators(): OffScreenTaxiIndicator[] {
     if (!this.camera || !this.container) return [];
@@ -2029,15 +2035,10 @@ export class GameEngine {
       if (p.state === 'WAITING' || p.state === 'SEARCHING') {
         const dist = Math.hypot(p.position.x - this.playerPos.x, p.position.z - this.playerPos.z);
         if (dist <= radius) {
-          // Check destination compatibility with active taxis at the stop
-          const matchingTaxi = this.taxis.find(
-            (t) =>
-              t.route === p.destination &&
-              (t.state === 'WAITING' || t.state === 'LOADING') &&
-              t.currentPassengers < t.capacity
-          );
+          // Check destination compatibility with active taxis at the stop using canPassengerFollow
+          const matchResult = this.canPassengerFollow(p);
 
-          if (!matchingTaxi) {
+          if (!matchResult.canFollow || !matchResult.matchingTaxi) {
             // DESTINATION INCOMPATIBLE!
             // Passenger refuses and exhibits refusal animation & error icon
             p.refusalTimer = 1.8;
@@ -2053,9 +2054,11 @@ export class GameEngine {
             this.callbacks.onFloatingText?.(`❌ ${p.destination}: Sem táxi na paragem!`, '#ef4444', p.position);
 
             // Trigger engine callback
-            this.callbacks.onPassengerRefusal?.(p, `Sem táxi para ${p.destination}`);
+            this.callbacks.onPassengerRefusal?.(p, matchResult.reason || `Sem táxi para ${p.destination}`);
             return;
           }
+
+          const matchingTaxi = matchResult.matchingTaxi;
 
           // Compatible! Check if an NPC is also near this passenger
           const nearbyRival = this.npcs.find(

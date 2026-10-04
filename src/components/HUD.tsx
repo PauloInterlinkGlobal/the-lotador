@@ -247,6 +247,8 @@ const HUDComponent: React.FC<HUDProps> = ({
   };
 
   const staminaPercent = Math.max(0, Math.min(100, (stamina / maxStamina) * 100));
+  const activeTaxisAtStop = taxis.filter((t) => t.state === 'WAITING' || t.state === 'LOADING');
+  const followedPassenger = passengers.find((p) => p.followedBy === 'PLAYER' && p.state === 'FOLLOWING');
 
   return (
     <div
@@ -313,6 +315,47 @@ const HUDComponent: React.FC<HUDProps> = ({
               {objectivesCount}
             </span>
           </button>
+
+          {/* 4. Active Paragem Taxis & Destination Matching Bar */}
+          <div className="flex flex-col gap-1 pointer-events-auto">
+            {followedPassenger && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/90 border border-emerald-400 text-white shadow-md animate-pulse">
+                <span className="text-[10px]">🚶</span>
+                <span className="text-[9px] font-anybody font-black uppercase text-emerald-300">
+                  CONDUZINDO:
+                </span>
+                <span className="text-[10px] font-anybody font-black uppercase text-white bg-emerald-600/80 px-1 rounded">
+                  {followedPassenger.destination}
+                </span>
+              </div>
+            )}
+
+            {activeTaxisAtStop.length > 0 && (
+              <div className="flex items-center gap-1 px-2 py-0.8 rounded-full bg-[#161c28]/90 backdrop-blur-xs border border-white/10 shadow-md">
+                <span className="text-[9px] font-space font-black text-slate-300 mr-0.5">🚐</span>
+                {activeTaxisAtStop.map((t) => {
+                  const free = Math.max(0, t.capacity - t.currentPassengers);
+                  const isMatch = followedPassenger && followedPassenger.destination === t.route;
+                  return (
+                    <div
+                      key={t.id}
+                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-space font-bold transition-all ${
+                        isMatch
+                          ? 'bg-[#fe6b00] text-white ring-2 ring-[#ffd700] animate-bounce scale-105'
+                          : free === 0
+                          ? 'bg-slate-800 text-slate-400'
+                          : 'bg-slate-800/90 text-white'
+                      }`}
+                      title={`Táxi ${t.route} (${free} vagas)`}
+                    >
+                      <span className="font-black font-anybody">{t.route}</span>
+                      <span className="text-[8px] opacity-80">({free})</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Top-Center Objectives HUD (Displays up to 4 active objectives in real-time) */}
