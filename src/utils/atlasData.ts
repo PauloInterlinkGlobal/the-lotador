@@ -237,6 +237,9 @@ export const ATLAS_FRAMES: Record<string, SpriteFrame> = {
   destination_viana: { x: 1000, y: 780, width: 145, height: 52 },
   destination_talatona: { x: 1000, y: 835, width: 145, height: 52 },
   destination_centro: { x: 1000, y: 890, width: 145, height: 52 },
+  destination_golfe2: { x: 1000, y: 780, width: 145, height: 52 },
+  destination_cacuaco: { x: 1000, y: 835, width: 145, height: 52 },
+  destination_camama: { x: 1000, y: 890, width: 145, height: 52 },
   logo_lotador: { x: 1160, y: 835, width: 270, height: 210 },
 
   // Urban Obstacles of Luanda (Zungueira & Fiscal da Paragem)

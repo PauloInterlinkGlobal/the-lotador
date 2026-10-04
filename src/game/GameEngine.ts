@@ -24,6 +24,8 @@ import { spriteAtlasManager } from '../utils/spriteAtlas';
 import { CAMPAIGN_ZONES } from '../utils/storage';
 import { BuildingManager } from './BuildingManager';
 import { classifyDevice, DynamicResolutionScaler } from '../utils/deviceProfile';
+import { ParagemEventManager } from './ParagemEventManager';
+import { ParagemEvent } from '../types/events';
 
 export interface GameEngineCallbacks {
   onScoreUpdate: (kz: number, xp: number, combo: number) => void;
@@ -40,6 +42,8 @@ export interface GameEngineCallbacks {
   onPassengerFollowed?: (p: Passenger) => void;
   onPassengerBoarded?: (p: Passenger, taxi: Taxi) => void;
   onPlayerRunStart?: () => void;
+  onParagemEvent?: (event: ParagemEvent | null) => void;
+  onPassengerRefusal?: (p: Passenger, reason: string) => void;
 }
 
 export class GameEngine {
@@ -53,6 +57,116 @@ export class GameEngine {
   private static cachedTaxiModel: THREE.Group | null = null;
   private static taxiModelLoadingPromise: Promise<THREE.Group> | null = null;
   private static readonly _tempScreenVec = new THREE.Vector3();
+
+  // World Space Canvas 3D Badge Texture Cache for Passengers
+  private static passengerBadgeCache: Map<string, THREE.CanvasTexture> = new Map();
+
+  /**
+   * Generates or retrieves a cached high-DPI canvas texture for a passenger's 3D World Space Canvas badge.
+   * Renders the destination pill (VIANA, GOLFE 2, TALATONA, etc.) with route-specific accents,
+   * downward anchor pointer, and visual refusal/acceptance states.
+   */
+  public static getPassengerBadgeTexture(
+    destination: RouteType,
+    status: 'NORMAL' | 'FOLLOWING' | 'REFUSED' = 'NORMAL'
+  ): THREE.CanvasTexture {
+    const key = `${destination}_${status}`;
+    if (GameEngine.passengerBadgeCache.has(key)) {
+      return GameEngine.passengerBadgeCache.get(key)!;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 76;
+    const ctx = canvas.getContext('2d');
+
+    if (ctx) {
+      let bgFill = '#0d1522f2';
+      let borderColor = '#f59e0b';
+      let icon = '📍';
+      let text = destination as string;
+      let textColor = '#ffffff';
+
+      if (destination === 'VIANA') borderColor = '#f59e0b';
+      else if (destination === 'GOLFE 2') borderColor = '#c084fc';
+      else if (destination === 'TALATONA') borderColor = '#00d2ff';
+      else if (destination === 'CENTRO') borderColor = '#10b981';
+      else if (destination === 'CACUACO') borderColor = '#ff6b00';
+      else if (destination === 'CAMAMA') borderColor = '#3b82f6';
+
+      if (status === 'REFUSED') {
+        bgFill = '#7f1d1df2';
+        borderColor = '#ef4444';
+        icon = '✕';
+        text = `${destination} (SEM TÁXI)`;
+        textColor = '#fecaca';
+      } else if (status === 'FOLLOWING') {
+        bgFill = '#064e3bf2';
+        borderColor = '#34d399';
+        icon = '✓';
+        text = `${destination} (OK)`;
+        textColor = '#a7f3d0';
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Subtle drop shadow
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetY = 4;
+
+      // Rounded pill (x: 8, y: 6, w: 240, h: 54, r: 27)
+      ctx.beginPath();
+      ctx.roundRect(8, 6, 240, 54, 27);
+      ctx.fillStyle = bgFill;
+      ctx.fill();
+      ctx.restore();
+
+      // Border outline
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = borderColor;
+      ctx.stroke();
+
+      // Downward pointer tip (world space anchor to head)
+      ctx.beginPath();
+      ctx.moveTo(120, 60);
+      ctx.lineTo(128, 72);
+      ctx.lineTo(136, 60);
+      ctx.fillStyle = bgFill;
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = borderColor;
+      ctx.stroke();
+
+      // Icon badge
+      ctx.beginPath();
+      ctx.arc(38, 33, 16, 0, Math.PI * 2);
+      ctx.fillStyle = borderColor;
+      ctx.fill();
+
+      ctx.fillStyle = status === 'REFUSED' ? '#ffffff' : '#0d1522';
+      ctx.font = 'bold 16px "Space Grotesk", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(icon === '📍' ? '●' : icon, 38, 34);
+
+      // Destination text
+      ctx.fillStyle = textColor;
+      const fontSize = text.length > 13 ? 17 : 21;
+      ctx.font = `900 ${fontSize}px "Anybody", "Space Grotesk", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 142, 33);
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    GameEngine.passengerBadgeCache.set(key, texture);
+    return texture;
+  }
 
   /**
    * Loads and caches the real Toyota HiAce GLB model with PBR materials,
@@ -240,6 +354,8 @@ export class GameEngine {
   public taxisLoadedCount = 0;
   public passengersServedCount = 0;
   public isRushHour = false;
+  public eventManager: ParagemEventManager;
+  public elapsedTime = 0;
   private _isPaused = false;
 
   public get isPaused(): boolean {
@@ -377,6 +493,20 @@ export class GameEngine {
 
     // Preload real 3D Toyota HiAce model
     GameEngine.preloadTaxiModel().catch(() => {});
+
+    // Initialize Paragem Random Events Manager (Blitz, Troco, Engarrafamento, Chuva)
+    this.eventManager = new ParagemEventManager(
+      (evt) => {
+        this.callbacks.onParagemEvent?.(evt);
+        this.callbacks.onFloatingText(evt.title, '#ffd700', this.playerPos);
+      },
+      (_evt, msg) => {
+        this.callbacks.onParagemEvent?.(null);
+        if (msg) {
+          this.callbacks.onFloatingText(msg, '#fe6b00', this.playerPos);
+        }
+      }
+    );
 
     window.addEventListener('resize', this.onWindowResize);
     this.animate(0);
@@ -1423,15 +1553,53 @@ export class GameEngine {
     pMesh.position.set(startX, 0.6, startZ);
     this.scene.add(pMesh);
     this.passengerMeshes.set(id, pMesh);
+    this.attachOrUpdatePassengerBadge(pMesh, passenger.destination, 'NORMAL');
     this.spawnSpriteParticle('effect_passenger_ok', passenger.position, 1.4, 2.0);
 
     return passenger;
   }
 
-  // 3D world position to 2D screen coordinate projection for tutorial pointers
-  public toScreenPosition(pos: { x: number; y: number; z: number }): { x: number; y: number; visible: boolean } {
+  /**
+   * Attaches or updates the 3D World Space Canvas Badge billboard on a passenger mesh.
+   */
+  private attachOrUpdatePassengerBadge(
+    pMesh: THREE.Group,
+    destination: RouteType,
+    status: 'NORMAL' | 'FOLLOWING' | 'REFUSED' = 'NORMAL'
+  ) {
+    let badgeSprite = pMesh.userData.badgeSprite as THREE.Sprite | undefined;
+    const tex = GameEngine.getPassengerBadgeTexture(destination, status);
+
+    if (!badgeSprite) {
+      const mat = new THREE.SpriteMaterial({
+        map: tex,
+        transparent: true,
+        depthTest: false,
+      });
+      badgeSprite = new THREE.Sprite(mat);
+      badgeSprite.name = 'passengerDestinationBadge';
+      badgeSprite.scale.set(1.4, 0.42, 1);
+      badgeSprite.position.set(0, 2.35, 0);
+      pMesh.add(badgeSprite);
+      pMesh.userData.badgeSprite = badgeSprite;
+    } else {
+      if (badgeSprite.material.map !== tex) {
+        badgeSprite.material.map = tex;
+        badgeSprite.material.needsUpdate = true;
+      }
+      badgeSprite.visible = true;
+    }
+    pMesh.userData.badgeDestination = destination;
+    pMesh.userData.badgeStatus = status;
+  }
+
+  // 3D world position to 2D screen coordinate projection for tutorial pointers & World Space Canvas
+  public toScreenPosition(
+    pos: { x: number; y: number; z: number },
+    offsetY: number = 1.2
+  ): { x: number; y: number; visible: boolean } {
     if (!this.camera || !this.container) return { x: 0, y: 0, visible: false };
-    const v = GameEngine._tempScreenVec.set(pos.x, (pos.y || 0.6) + 1.2, pos.z);
+    const v = GameEngine._tempScreenVec.set(pos.x, (pos.y || 0.6) + offsetY, pos.z);
     v.project(this.camera);
     const isBehind = v.z > 1;
     const width = this.container.clientWidth;
@@ -1501,9 +1669,12 @@ export class GameEngine {
         const isDestinationMatching = followedDestinations.has(taxi.route);
 
         // Color theme by route
-        let color = '#00b4d8'; // VIANA cyan/blue
-        if (taxi.route === 'TALATONA') color = '#fe6b00';
-        else if (taxi.route === 'CENTRO') color = '#ffd700';
+        let color = '#ffd700'; // VIANA
+        if (taxi.route === 'TALATONA') color = '#00d2ff';
+        else if (taxi.route === 'CENTRO') color = '#10b981';
+        else if (taxi.route === 'GOLFE 2') color = '#ba68c8';
+        else if (taxi.route === 'CACUACO') color = '#ff6b00';
+        else if (taxi.route === 'CAMAMA') color = '#3b82f6';
 
         indicators.push({
           id: taxi.id,
@@ -1538,7 +1709,7 @@ export class GameEngine {
     const emptySlotIndex = availableSlots.findIndex((s) => !s.occupied);
     if (emptySlotIndex === -1) return;
 
-    const routes: RouteType[] = ['VIANA', 'TALATONA', 'CENTRO'];
+    const routes: RouteType[] = ['VIANA', 'TALATONA', 'CENTRO', 'GOLFE 2', 'CACUACO', 'CAMAMA'];
     const route = forcedRoute || routes[Math.floor(Math.random() * routes.length)];
     const id = 'taxi_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
 
@@ -1676,10 +1847,26 @@ export class GameEngine {
         ? 'destination_viana'
         : route === 'TALATONA'
         ? 'destination_talatona'
+        : route === 'GOLFE 2'
+        ? 'destination_golfe2'
+        : route === 'CACUACO'
+        ? 'destination_cacuaco'
+        : route === 'CAMAMA'
+        ? 'destination_camama'
         : 'destination_centro';
     const destTex = spriteAtlasManager.getTexture(destKey);
     const routeColor =
-      route === 'VIANA' ? 0xffd700 : route === 'TALATONA' ? 0x00d2ff : 0x00ff88;
+      route === 'VIANA'
+        ? 0xffd700
+        : route === 'TALATONA'
+        ? 0x00d2ff
+        : route === 'GOLFE 2'
+        ? 0xba68c8
+        : route === 'CACUACO'
+        ? 0xff6b00
+        : route === 'CAMAMA'
+        ? 0x3b82f6
+        : 0x00ff88;
 
     const boxGeo = new THREE.BoxGeometry(1.65, 0.46, 0.44);
     const boxMat = new THREE.MeshStandardMaterial({
@@ -1754,7 +1941,7 @@ export class GameEngine {
   public spawnPassenger() {
     if (this.passengers.length >= 12) return;
 
-    const routes: RouteType[] = ['VIANA', 'TALATONA', 'CENTRO'];
+    const routes: RouteType[] = ['VIANA', 'TALATONA', 'CENTRO', 'GOLFE 2', 'CACUACO', 'CAMAMA'];
     const route = routes[Math.floor(Math.random() * routes.length)];
     const types: PassengerType[] = ['NORMAL', 'NORMAL', 'APRESSADO', 'INDECISO', 'OBSERVADOR', 'ESPECIAL'];
     const pType = types[Math.floor(Math.random() * types.length)];
@@ -1810,6 +1997,7 @@ export class GameEngine {
 
     pMesh.position.set(startX, 0.6, startZ);
     this.passengerMeshes.set(id, pMesh);
+    this.attachOrUpdatePassengerBadge(pMesh, passenger.destination, 'NORMAL');
 
     // Visual feedback particle on spawn ✨
     this.spawnSpriteParticle('effect_passenger_ok', passenger.position, 1.4, 2.0);
@@ -1833,7 +2021,7 @@ export class GameEngine {
     const radius = (this.isTutorial ? 8.0 : 5.0) + this.playerStats.upgradeVoice * 0.8;
 
     // Speak contextual phrase
-    const phrases = ['Viana!', 'Talatona!', 'Centro!', 'Entra, entra!', 'Táxi a sair!'];
+    const phrases = ['Viana!', 'Talatona!', 'Centro!', 'Golfe 2!', 'Cacuaco!', 'Camama!', 'Entra, entra!', 'Táxi a sair!'];
     soundManager.speakPhrase(phrases[Math.floor(Math.random() * phrases.length)]);
 
     // Find waiting passengers within radius
@@ -1841,7 +2029,35 @@ export class GameEngine {
       if (p.state === 'WAITING' || p.state === 'SEARCHING') {
         const dist = Math.hypot(p.position.x - this.playerPos.x, p.position.z - this.playerPos.z);
         if (dist <= radius) {
-          // Check if an NPC is also near this passenger
+          // Check destination compatibility with active taxis at the stop
+          const matchingTaxi = this.taxis.find(
+            (t) =>
+              t.route === p.destination &&
+              (t.state === 'WAITING' || t.state === 'LOADING') &&
+              t.currentPassengers < t.capacity
+          );
+
+          if (!matchingTaxi) {
+            // DESTINATION INCOMPATIBLE!
+            // Passenger refuses and exhibits refusal animation & error icon
+            p.refusalTimer = 1.8;
+            p.refusalReason = 'SEM_TAXI';
+
+            // Visual error particle / icon over passenger head
+            this.spawnSpriteParticle('effect_dispute_angry', p.position, 1.6, 2.0);
+
+            // Audio refusal feedback
+            soundManager.playPassengerRefusal();
+
+            // Refusal floating toast
+            this.callbacks.onFloatingText?.(`❌ ${p.destination}: Sem táxi na paragem!`, '#ef4444', p.position);
+
+            // Trigger engine callback
+            this.callbacks.onPassengerRefusal?.(p, `Sem táxi para ${p.destination}`);
+            return;
+          }
+
+          // Compatible! Check if an NPC is also near this passenger
           const nearbyRival = this.npcs.find(
             (n) =>
               (n.targetPassengerId === p.id || n.followingPassengerId === p.id) &&
@@ -1854,6 +2070,7 @@ export class GameEngine {
           } else if (!nearbyRival) {
             p.state = 'FOLLOWING';
             p.followedBy = 'PLAYER';
+            p.assignedTaxiId = matchingTaxi.id;
             this.callbacks.onFloatingText('Acompanhando!', '#ffd700', p.position);
             soundManager.playCoin();
             // Visual feedback on recruit
@@ -1889,7 +2106,8 @@ export class GameEngine {
       this.passengersServedCount++;
       this.callbacks.onPassengerServedCount(this.passengersServedCount);
 
-      const reward = followingP.value * this.combo;
+      const eventMultiplier = this.eventManager?.getActiveEvent()?.bonusMultiplier || 1.0;
+      const reward = Math.round(followingP.value * this.combo * eventMultiplier);
       this.matchKz += reward;
       this.matchXp += 15;
 
@@ -1908,6 +2126,19 @@ export class GameEngine {
 
       this.callbacks.onPassengerBoarded?.(followingP, matchingTaxi);
     }
+  }
+
+  public resolveChangeEvent(): boolean {
+    const res = this.eventManager?.resolveChangeMinigame();
+    if (res) {
+      this.matchKz += res.rewardKz;
+      this.matchXp += res.rewardXp;
+      this.callbacks.onScoreUpdate(this.matchKz, this.matchXp, this.combo);
+      this.callbacks.onFloatingText(`+${res.rewardKz} Kz (Troco)`, '#ffd700', this.playerPos);
+      soundManager.playCoin();
+      return true;
+    }
+    return false;
   }
 
   private onTaxiFilled(taxi: Taxi) {
@@ -1986,6 +2217,7 @@ export class GameEngine {
       }
     }
 
+    this.elapsedTime += delta;
     this.updatePlayer(delta);
     this.updateObstacles(delta);
     this.updateDispute(delta);
@@ -2891,6 +3123,45 @@ export class GameEngine {
         (shadowMesh.material as THREE.MeshBasicMaterial).opacity = Math.max(0.1, shadowOpacity);
       }
 
+      // Update refusal state & head/body shake animation
+      if (p.refusalTimer && p.refusalTimer > 0) {
+        p.refusalTimer -= delta;
+        pMesh.rotation.y = Math.sin(p.refusalTimer * 32) * 0.35;
+        pMesh.rotation.z = Math.sin(p.refusalTimer * 16) * 0.08;
+      } else {
+        pMesh.rotation.y = 0;
+        pMesh.rotation.z = 0;
+      }
+
+      // World Space Canvas 3D Badge state update
+      const badgeStatus: 'NORMAL' | 'FOLLOWING' | 'REFUSED' =
+        p.refusalTimer && p.refusalTimer > 0
+          ? 'REFUSED'
+          : p.state === 'FOLLOWING'
+          ? 'FOLLOWING'
+          : 'NORMAL';
+
+      let badgeSprite = pMesh.userData.badgeSprite as THREE.Sprite | undefined;
+      if (!badgeSprite) {
+        this.attachOrUpdatePassengerBadge(pMesh, p.destination, badgeStatus);
+        badgeSprite = pMesh.userData.badgeSprite as THREE.Sprite | undefined;
+      } else if (
+        pMesh.userData.badgeDestination !== p.destination ||
+        pMesh.userData.badgeStatus !== badgeStatus
+      ) {
+        this.attachOrUpdatePassengerBadge(pMesh, p.destination, badgeStatus);
+      }
+
+      if (badgeSprite) {
+        badgeSprite.position.y = 2.35 + Math.sin(this.elapsedTime * 3 + i) * 0.04;
+        if (badgeStatus === 'REFUSED') {
+          const pulse = 1.0 + Math.sin(this.elapsedTime * 16) * 0.12;
+          badgeSprite.scale.set(1.45 * pulse, 0.44 * pulse, 1);
+        } else {
+          badgeSprite.scale.set(1.4, 0.42, 1);
+        }
+      }
+
       pMesh.position.set(p.position.x, 0.6, p.position.z);
     }
   }
@@ -2899,6 +3170,11 @@ export class GameEngine {
     const mesh = this.passengerMeshes.get(p.id);
     if (mesh) {
       mesh.visible = false;
+      mesh.rotation.set(0, 0, 0);
+      const badgeSprite = mesh.userData.badgeSprite as THREE.Sprite | undefined;
+      if (badgeSprite) {
+        badgeSprite.visible = false;
+      }
       this.passengerMeshPool.push(mesh);
       this.passengerMeshes.delete(p.id);
     }
@@ -2976,6 +3252,9 @@ export class GameEngine {
         this.spawnTaxi();
       }
     }
+
+    // Update Paragem Random Events
+    this.eventManager?.update(delta, this.isTutorial, this.levelConfig?.level_number || 1);
   }
 
   private updateCamera() {
@@ -3013,6 +3292,7 @@ export class GameEngine {
     }
     window.removeEventListener('resize', this.onWindowResize);
     soundManager.stopBackgroundRhythm();
+    this.eventManager?.clear();
 
     // Comprehensive WebGL and Three.js Memory Cleanup
     if (this.scene) {

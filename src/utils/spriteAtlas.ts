@@ -924,6 +924,9 @@ function drawDestinationBanner(ctx: CanvasRenderingContext2D, name: string, w: n
     destination_viana: 'VIANA',
     destination_talatona: 'TALATONA',
     destination_centro: 'CENTRO',
+    destination_golfe2: 'GOLFE 2',
+    destination_cacuaco: 'CACUACO',
+    destination_camama: 'CAMAMA',
   };
   ctx.fillStyle = '#161c28';
   ctx.font = `bold ${Math.round(h * 0.4)}px sans-serif`;

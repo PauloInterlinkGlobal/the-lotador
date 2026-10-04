@@ -48,6 +48,7 @@ export interface LevelData {
   unlocked: boolean;
   stars: number; // 0 - 3
   difficulty: 'FÁCIL' | 'MÉDIO' | 'DIFÍCIL' | 'EXTREMO';
+  is_tutorial?: boolean;
   star_conditions?: {
     oneStar: string;
     twoStars: string;

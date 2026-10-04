@@ -1,14 +1,18 @@
 /**
  * LOTADOR — Sistema Oficial de Níveis e Curva de Dificuldade Progressiva
  * 
- * Princípio: Cada nível é um objeto de configuração (Data-Driven).
+ * Princípio: Cada nível é um objeto de configuração Data-Driven puro (LevelConfig),
+ * permitindo balanceamento ágil sem alterar o loop central do jogo.
  * 
- * Curva de Dificuldade:
- * - Níveis 1–2: 1 objetivo (lotar 2–3 passageiros), tempo generoso, sem obstáculos.
- * - Níveis 3–4: 1–2 objetivos (lotar + ganhar X Kz), primeiros obstáculos (Zungueira).
- * - Níveis 5–7: 2 objetivos, rotas variadas (Viana, Cacuaco, Kilamba, Cazenga), táxis rivais.
- * - Níveis 8–10: 2–3 objetivos, fiscalização/polícia, trânsito denso, tempo mais curto.
- * - Nível 11+: Gerado por fórmula procedural (generateLevel) com teto máximo de jogabilidade.
+ * Curva de Dificuldade Progressiva:
+ * - Níveis 1–2: 1 objetivo simples (lotar 2–3 passageiros), tempo generoso, sem pressão.
+ *               O Nível 1 é o TUTORIAL oficial guiado da paragem de Viana.
+ * - Níveis 3–4: 1–2 objetivos (lotar passageiros + arrecadar Kz); surgem obstáculos (Zungueira).
+ * - Níveis 5–7: 2 objetivos, rotas variadas (Viana, Cacuaco, Kilamba, Cazenga), concorrência
+ *               de rivais disputando passageiros e combos de embarque.
+ * - Níveis 8–10: 2–3 objetivos, fiscalização policial ativa (apito e multas), trânsito denso,
+ *                tempo mais curto e ritmo frenético.
+ * - Nível 11+: Gerador procedural infinito (generateLevel) com escalabilidade progressiva.
  */
 
 import { LevelData, LevelObjective } from '../types/levelObjectives';
@@ -24,7 +28,7 @@ export type ObjectiveType =
 export interface Objective {
   type: ObjectiveType;
   target: number;
-  label: string; // Ex.: "Lota 3 passageiros no táxi de Viana"
+  label: string; // Ex.: "Lota 2 passageiros no táxi de Viana"
 }
 
 export interface LevelDifficulty {
@@ -38,13 +42,14 @@ export interface LevelDifficulty {
 
 export interface LevelConfig {
   id: number;
-  route: string;            // "Viana", "Cacuaco", "Kilamba", "Cazenga", "Talatona", "Mutamba", "Samba"
+  route: string;            // "Viana", "Cazenga", "Cacuaco", "Kilamba", "Talatona", "Mutamba", "Samba"
+  title: string;
+  description: string;
   timeLimit: number;        // Segundos de partida
+  isTutorial?: boolean;     // Verdadeiro no Nível 1
   objectives: Objective[];  // 1 a 3 objetivos combináveis
   difficulty: LevelDifficulty;
   stars: { two: number; three: number }; // Segundos restantes mínimos para 2 e 3 estrelas
-  title: string;
-  description: string;
   rewardKz: number;
   rewardXp: number;
   tier: 'APRENDIZ' | 'LOTADOR' | 'LOTADOR EXPERIENTE' | 'LOTADOR PROFISSIONAL' | 'MESTRE DA PARAGEM';
@@ -61,16 +66,17 @@ export const ROUTES = [
 ] as const;
 
 /**
- * Os 10 Primeiros Níveis Feitos à Mão (Hand-Crafted) com Curva Suave
+ * Os 10 Primeiros Níveis Feitos à Mão (Hand-Crafted) com Balanceamento Rigoroso
  */
 export const INITIAL_LEVELS: LevelConfig[] = [
-  // ─── NÍVEIS 1 A 2: APRENDIZ (Sem obstáculos, tempo generoso) ───────────────
+  // ─── NÍVEIS 1 A 2: APRENDIZ (Sem obstáculos, tempo generoso, Nível 1 é o Tutorial) ───
   {
     id: 1,
     route: 'Viana',
-    title: 'Primeiro Turno na Paragem',
-    description: 'Aprende o ritmo da paragem de Viana: chama os clientes e lota o primeiro candongueiro.',
+    title: 'Tutorial: Primeiro Turno na Paragem',
+    description: 'Aprende a arte do lotador em Luanda: aproximar-te dos clientes, usar CHAMAR [E], conduzi-los ao candongueiro azul e carregar em LOTAR! [Espaço].',
     timeLimit: 120,
+    isTutorial: true,
     tier: 'APRENDIZ',
     objectives: [
       {
@@ -87,15 +93,16 @@ export const INITIAL_LEVELS: LevelConfig[] = [
       traffic: 0.15,
     },
     stars: { two: 50, three: 80 },
-    rewardKz: 400,
-    rewardXp: 120,
+    rewardKz: 500,
+    rewardXp: 150,
   },
   {
     id: 2,
     route: 'Viana',
     title: 'Mais Clientes em Viana',
-    description: 'O movimento cresce na estrada de Catete. Organiza mais passageiros para a carrinha azul.',
+    description: 'O movimento cresce na paragem de Catete. O tempo é generoso e não há obstáculos: chama e lota 3 passageiros para a carrinha azul.',
     timeLimit: 110,
+    isTutorial: false,
     tier: 'APRENDIZ',
     objectives: [
       {
@@ -112,8 +119,8 @@ export const INITIAL_LEVELS: LevelConfig[] = [
       traffic: 0.25,
     },
     stars: { two: 40, three: 70 },
-    rewardKz: 500,
-    rewardXp: 150,
+    rewardKz: 600,
+    rewardXp: 180,
   },
 
   // ─── NÍVEIS 3 A 4: PRIMEIROS OBSTÁCULOS & GANHOS EM KZ ────────────────────
@@ -121,8 +128,9 @@ export const INITIAL_LEVELS: LevelConfig[] = [
     id: 3,
     route: 'Cazenga',
     title: 'Ruas do Cazenga',
-    description: 'Primeira paragem no Cazenga. Cuidado com a Dona Maria e as bacias de fruta no passeio!',
+    description: 'Primeira paragem no Cazenga. Cuidado com a Dona Maria e as bacias de fruta no passeio! Lota 3 passageiros e arrecada 300 Kz.',
     timeLimit: 100,
+    isTutorial: false,
     tier: 'APRENDIZ',
     objectives: [
       {
@@ -139,20 +147,21 @@ export const INITIAL_LEVELS: LevelConfig[] = [
     difficulty: {
       spawnRate: 5.5,
       rivals: 0,
-      obstacles: 1, // 1 Zungueira
+      obstacles: 1, // 1 Zungueira (Dona Maria)
       police: false,
       traffic: 0.3,
     },
     stars: { two: 35, three: 60 },
-    rewardKz: 650,
-    rewardXp: 180,
+    rewardKz: 750,
+    rewardXp: 210,
   },
   {
     id: 4,
     route: 'Cazenga',
     title: 'Movimento no Asfalto',
-    description: 'Mais passageiros querem transporte rápido. Mantém a passada firme e acumula gorjetas.',
+    description: 'Mais passageiros procuram transporte rápido. Mantém a passada firme, lota 4 passageiros e acumula gorjetas.',
     timeLimit: 95,
+    isTutorial: false,
     tier: 'APRENDIZ',
     objectives: [
       {
@@ -174,8 +183,8 @@ export const INITIAL_LEVELS: LevelConfig[] = [
       traffic: 0.35,
     },
     stars: { two: 30, three: 55 },
-    rewardKz: 750,
-    rewardXp: 210,
+    rewardKz: 850,
+    rewardXp: 240,
   },
 
   // ─── NÍVEIS 5 A 7: ROTAS DIFERENTES & CONCORRÊNCIA DE RIVAIS ──────────────
@@ -183,8 +192,9 @@ export const INITIAL_LEVELS: LevelConfig[] = [
     id: 5,
     route: 'Cacuaco',
     title: 'Concorrência em Cacuaco',
-    description: 'Aparece o veterano Manuel! Ele disputa os clientes mais rápidos. Faz combo para vencer!',
+    description: 'Aparece o veterano Manuel! Ele disputa os clientes mais rápidos. Faz combo x2 de embarque para vencer a disputa!',
     timeLimit: 90,
+    isTutorial: false,
     tier: 'LOTADOR',
     objectives: [
       {
@@ -207,15 +217,16 @@ export const INITIAL_LEVELS: LevelConfig[] = [
       traffic: 0.45,
     },
     stars: { two: 25, three: 50 },
-    rewardKz: 900,
-    rewardXp: 250,
+    rewardKz: 1000,
+    rewardXp: 280,
   },
   {
     id: 6,
     route: 'Kilamba',
     title: 'Avenidas do Kilamba',
-    description: 'Terminal movimentado com passageiros apressados. Enche os táxis e fatura alto.',
+    description: 'Terminal movimentado nas centralidades do Kilamba. Passageiros apressados exigem resposta rápida e sprint.',
     timeLimit: 85,
+    isTutorial: false,
     tier: 'LOTADOR',
     objectives: [
       {
@@ -233,20 +244,21 @@ export const INITIAL_LEVELS: LevelConfig[] = [
       spawnRate: 7,
       rivals: 1,
       rivalSpeed: 5.6,
-      obstacles: 2, // 2 Vendedores ambulantes
+      obstacles: 2, // 2 Ambulantes
       police: false,
       traffic: 0.5,
     },
     stars: { two: 25, three: 45 },
-    rewardKz: 1050,
-    rewardXp: 290,
+    rewardKz: 1150,
+    rewardXp: 320,
   },
   {
     id: 7,
     route: 'Cazenga',
     title: 'Hora de Ponta no Cazenga',
-    description: 'Dois rivais na paragem! Usa o botão CORRER com sabedoria para chegar antes deles.',
+    description: 'Dois rivais disputam cada cliente na paragem! Usa o botão CORRER com sabedoria para chegar antes deles.',
     timeLimit: 80,
+    isTutorial: false,
     tier: 'LOTADOR EXPERIENTE',
     objectives: [
       {
@@ -269,8 +281,8 @@ export const INITIAL_LEVELS: LevelConfig[] = [
       traffic: 0.6,
     },
     stars: { two: 20, three: 40 },
-    rewardKz: 1200,
-    rewardXp: 330,
+    rewardKz: 1300,
+    rewardXp: 360,
   },
 
   // ─── NÍVEIS 8 A 10: POLÍCIA/FISCAL, TRÂNSITO DENSO & PRESSÃO MÁXIMA ──────
@@ -278,8 +290,9 @@ export const INITIAL_LEVELS: LevelConfig[] = [
     id: 8,
     route: 'Talatona',
     title: 'Fiscal na Rotunda de Talatona',
-    description: 'O Fiscal António está a vigiar a paragem! Não corras perto dele nem batas nos vendedores.',
+    description: 'O Fiscal António está a vigiar a paragem com apito em riste! Não corras descontrolado nem batas nos vendedores.',
     timeLimit: 75,
+    isTutorial: false,
     tier: 'LOTADOR EXPERIENTE',
     objectives: [
       {
@@ -302,15 +315,16 @@ export const INITIAL_LEVELS: LevelConfig[] = [
       traffic: 0.7,
     },
     stars: { two: 20, three: 35 },
-    rewardKz: 1400,
-    rewardXp: 380,
+    rewardKz: 1500,
+    rewardXp: 400,
   },
   {
     id: 9,
     route: 'Mutamba',
     title: 'Correria na Mutamba Baixa',
-    description: 'O centro histórico de Luanda está em rebuliço. Conclui rápido para garantir gorjetas máximas.',
+    description: 'O centro histórico e financeiro de Luanda está em rebuliço. Conclui em menos de 45 segundos para garantir gorjetas máximas.',
     timeLimit: 70,
+    isTutorial: false,
     tier: 'LOTADOR PROFISSIONAL',
     objectives: [
       {
@@ -338,31 +352,32 @@ export const INITIAL_LEVELS: LevelConfig[] = [
       traffic: 0.8,
     },
     stars: { two: 18, three: 30 },
-    rewardKz: 1700,
-    rewardXp: 440,
+    rewardKz: 1800,
+    rewardXp: 460,
   },
   {
     id: 10,
     route: 'Samba',
     title: 'O Grande Terminal da Samba',
-    description: 'O teste definitivo do lotador profissional: trânsito intenso, fiscais e disputas ferozes.',
+    description: 'O teste definitivo do lotador profissional: trânsito denso, fiscais em patrulha e 2 rivais velozes. Conquista o respeito total!',
     timeLimit: 65,
+    isTutorial: false,
     tier: 'LOTADOR PROFISSIONAL',
     objectives: [
       {
         type: 'LOAD_PASSENGERS',
-        target: 7,
-        label: 'Lota 7 passageiros na Samba',
+        target: 6,
+        label: 'Lota 6 passageiros na Samba',
       },
       {
-        type: 'COMBO',
-        target: 3,
-        label: 'Atinge combo x3 de embarque',
+        type: 'EARN_KZ',
+        target: 1000,
+        label: 'Arrecada pelo menos 1.000 Kz',
       },
       {
         type: 'NO_CRASHES',
         target: 0,
-        label: 'Sem infrações nem batidas',
+        label: 'Zero batidas em fiscais de trânsito',
       },
     ],
     difficulty: {
@@ -374,78 +389,77 @@ export const INITIAL_LEVELS: LevelConfig[] = [
       traffic: 0.9,
     },
     stars: { two: 15, three: 25 },
-    rewardKz: 2100,
-    rewardXp: 520,
+    rewardKz: 2200,
+    rewardXp: 550,
   },
 ];
 
 /**
- * Gerador Procedural de Fases 11+ com Dificuldade Equilibrada e Teto Máximo
+ * Níveis 11+: Gerador Procedural com Dificuldade Infinita e Equilibrada
  */
 export function generateLevel(n: number): LevelConfig {
-  const route = ROUTES[(n - 1) % ROUTES.length];
-  const timeLimit = Math.max(50, 130 - (n - 10) * 3);
+  const routeIdx = (n - 1) % ROUTES.length;
+  const route = ROUTES[routeIdx];
+  const timeLimit = Math.max(50, 100 - n * 3);
 
-  // Seleção inteligente de 2 a 3 objetivos
-  const objectives: Objective[] = [];
-  
-  // Objetivo Principal: Lotação de passageiros (teto de 10)
-  const loadTarget = Math.min(10, 5 + Math.floor(n / 3));
-  objectives.push({
-    type: 'LOAD_PASSENGERS',
-    target: loadTarget,
-    label: `Lota ${loadTarget} passageiros para ${route}`,
-  });
-
-  // Objetivo Secundário alternado
-  if (n % 2 === 0) {
-    const kzTarget = Math.min(2500, 700 + n * 70);
-    objectives.push({
+  const pool: Objective[] = [
+    {
+      type: 'LOAD_PASSENGERS',
+      target: Math.min(8, 4 + Math.floor(n / 4)),
+      label: `Lota ${Math.min(8, 4 + Math.floor(n / 4))} passageiros para ${route}`,
+    },
+    {
       type: 'EARN_KZ',
-      target: kzTarget,
-      label: `Arrecada pelo menos ${kzTarget} Kz`,
-    });
-  } else {
-    const comboTarget = Math.min(4, 2 + (n >= 16 ? 1 : 0));
-    objectives.push({
+      target: Math.round(500 + n * 110),
+      label: `Arrecada pelo menos ${Math.round(500 + n * 110).toLocaleString()} Kz`,
+    },
+    {
+      type: 'USE_SPRINT',
+      target: Math.min(6, 2 + Math.floor(n / 5)),
+      label: `Aciona o botão CORRER ${Math.min(6, 2 + Math.floor(n / 5))} vezes`,
+    },
+    {
       type: 'COMBO',
-      target: comboTarget,
-      label: `Alcança combo x${comboTarget} de embarque`,
-    });
-  }
+      target: Math.min(5, 2 + Math.floor(n / 7)),
+      label: `Alcança combo x${Math.min(5, 2 + Math.floor(n / 7))} de embarque`,
+    },
+    {
+      type: 'NO_CRASHES',
+      target: 0,
+      label: 'Zero batidas em fiscais de trânsito',
+    },
+    {
+      type: 'FINISH_UNDER_TIME',
+      target: Math.max(30, timeLimit - 25),
+      label: `Conclui a fase em menos de ${Math.max(30, timeLimit - 25)}s`,
+    },
+  ];
 
-  // Terceiro objetivo para fases desafiantes (n >= 13)
-  if (n >= 13) {
-    if (n % 3 === 0) {
-      objectives.push({
-        type: 'NO_CRASHES',
-        target: 0,
-        label: 'Sem batidas com fiscais ou zungueiras',
-      });
+  // Escolhe 2 a 3 objetivos determinísticos baseados no nível
+  const count = n >= 15 ? 3 : 2;
+  const objectives: Objective[] = [];
+  objectives.push(pool[0]); // Sempre inclui lotação de passageiros
+  objectives.push(pool[1 + ((n * 2) % (pool.length - 1))]);
+  if (count === 3) {
+    const thirdIdx = 1 + ((n * 3 + 1) % (pool.length - 1));
+    if (!objectives.some((o) => o.type === pool[thirdIdx].type)) {
+      objectives.push(pool[thirdIdx]);
     } else {
-      const sprintTarget = Math.min(6, 3 + (n % 3));
-      objectives.push({
-        type: 'USE_SPRINT',
-        target: sprintTarget,
-        label: `Aciona o botão CORRER ${sprintTarget} vezes`,
-      });
+      objectives.push(pool[2]);
     }
   }
 
-  // Determinação do Tier
-  const tier =
-    n >= 20
-      ? 'MESTRE DA PARAGEM'
-      : n >= 15
-      ? 'LOTADOR PROFISSIONAL'
-      : 'LOTADOR EXPERIENTE';
+  let tier: LevelConfig['tier'] = 'LOTADOR EXPERIENTE';
+  if (n >= 18) tier = 'MESTRE DA PARAGEM';
+  else if (n >= 12) tier = 'LOTADOR PROFISSIONAL';
 
   return {
     id: n,
     route,
-    title: `Fase ${n}: Linha ${route}`,
-    description: `Desafio contínuo na rota de ${route}. Tráfego veloz e disputa de passageiros de elite.`,
+    title: `Desafio da Linha ${route} (Turno ${n})`,
+    description: `A rota de ${route} exige rapidez e perícia: coordena os candongueiros e ultrapassa os concorrentes locais.`,
     timeLimit,
+    isTutorial: false,
     tier,
     objectives,
     difficulty: {
@@ -515,6 +529,7 @@ export function toLevelData(cfg: LevelConfig): LevelData {
     reward_xp: cfg.rewardXp,
     unlocked: cfg.id === 1,
     stars: 0,
+    is_tutorial: cfg.isTutorial || cfg.id === 1,
     difficulty: cfg.difficulty.rivals >= 2 || cfg.difficulty.police ? 'DIFÍCIL' : cfg.id > 3 ? 'MÉDIO' : 'FÁCIL',
     star_conditions: {
       oneStar: 'Cumprir todos os objetivos principais',
@@ -525,7 +540,7 @@ export function toLevelData(cfg: LevelConfig): LevelData {
 }
 
 /**
- * Lista das primeiras 20 fases convertidas para LevelData (compatibilidade imediata)
+ * Array oficial com os níveis balanceados para o jogo (Nível 1 é o Tutorial guiado)
  */
 export const ALL_LEVELS_DATA: LevelData[] = Array.from({ length: 20 }, (_, i) => {
   return toLevelData(getLevelConfig(i + 1));

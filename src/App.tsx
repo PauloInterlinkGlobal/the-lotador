@@ -28,6 +28,7 @@ import { PWAStatusBanner } from './components/PWAStatusBanner';
 import { TutorialOverlay, TutorialStep } from './components/TutorialOverlay';
 import { useMobileLifecycle, tryLockLandscapeWeb } from './hooks/useMobileLifecycle';
 import { DiagnosticOverlay } from './components/DiagnosticOverlay';
+import { ParagemEvent } from './types/events';
 import { PerformanceOverlay } from './components/PerformanceOverlay';
 import { LoadingScreen } from './components/LoadingScreen';
 import { RotateDeviceOverlay } from './components/RotateDeviceOverlay';
@@ -78,6 +79,7 @@ export default function App() {
   const [engineInstance, setEngineInstance] = useState<GameEngine | null>(null);
   const [passengersServed, setPassengersServed] = useState(0);
   const [taxisLoaded, setTaxisLoaded] = useState(0);
+  const [paragemEvent, setParagemEvent] = useState<ParagemEvent | null>(null);
 
   const [matchObjectives, setMatchObjectives] = useState<LevelObjective[]>(
     () => (ALL_LEVELS_DATA.find((l) => l.level_number === (stats.highestUnlockedLevel || 1)) || ALL_LEVELS_DATA[0]).objectives
@@ -297,6 +299,7 @@ export default function App() {
       }))
     );
     setIsRushHour(false);
+    setParagemEvent(null);
     setActiveDispute(null);
     setFloatingToasts([]);
     setIsPaused(false);
@@ -481,6 +484,17 @@ export default function App() {
                     : obj
                 )
               );
+            },
+            onParagemEvent: (evt) => setParagemEvent(evt),
+            onPassengerRefusal: (p) => {
+              setFloatingToasts((prev) => [
+                ...prev.slice(-3),
+                {
+                  id: Date.now() + Math.random(),
+                  text: `❌ ${p.destination}: Sem táxi compatível na paragem!`,
+                  color: '#ef4444',
+                },
+              ]);
             },
           },
           { isTutorial: runTutorial, levelConfig: selectedLevel }
@@ -764,6 +778,10 @@ export default function App() {
             onOpenObjectives={handleOpenObjectives}
             objectivesCount={DEFAULT_MISSIONS.filter((m) => !m.completed).length}
             tutorialHighlight={tutorialHighlight}
+            paragemEvent={paragemEvent}
+            onResolveParagemEvent={() => {
+              engineRef.current?.resolveChangeEvent();
+            }}
           />
 
           {/* Level Start Banner ("Nível N — Objetivos") */}

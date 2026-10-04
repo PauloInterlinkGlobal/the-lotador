@@ -21,7 +21,7 @@ export type PassengerState =
   | 'COMPLETED'
   | 'LEAVING';
 
-export type RouteType = 'VIANA' | 'TALATONA' | 'CENTRO';
+export type RouteType = 'VIANA' | 'TALATONA' | 'CENTRO' | 'GOLFE 2' | 'CACUACO' | 'CAMAMA';
 
 export type TaxiType = 
   | 'NORMAL'
@@ -62,6 +62,8 @@ export interface Passenger {
   velocity?: { x: number; z: number };
   facingLeft?: boolean;
   isMoving?: boolean;
+  refusalTimer?: number;
+  refusalReason?: string;
 }
 
 export interface Taxi {

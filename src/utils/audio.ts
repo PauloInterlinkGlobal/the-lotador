@@ -213,6 +213,27 @@ class SoundEngine {
     osc2.stop(now + 0.3);
   }
 
+  // Passenger destination mismatch / refusal sound
+  public playPassengerRefusal() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(280, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.22);
+
+    gain.gain.setValueAtTime(0.22, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.22);
+  }
+
   // Taxi Full Fanfare!
   public playTaxiFull() {
     const ctx = this.getContext();

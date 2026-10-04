@@ -15,6 +15,8 @@ import { GameEngine } from '../game/GameEngine';
 import { LevelObjective } from '../types/levelObjectives';
 import { InGameObjectivesHUD } from './InGameObjectivesHUD';
 import { SpriteIcon } from './SpriteIcon';
+import { ParagemEvent } from '../types/events';
+import { WorldSpaceCanvas } from './WorldSpaceCanvas';
 
 interface HUDProps {
   money: number;
@@ -43,6 +45,8 @@ interface HUDProps {
   objectivesCount?: number;
   tutorialHighlight?: 'JOYSTICK' | 'CALL' | 'RUN' | 'MONEY' | 'ENERGY' | 'OBJECTIVES' | 'TIMER' | null;
   isTutorial?: boolean;
+  paragemEvent?: ParagemEvent | null;
+  onResolveParagemEvent?: () => void;
 }
 
 const HUDComponent: React.FC<HUDProps> = ({
@@ -72,6 +76,8 @@ const HUDComponent: React.FC<HUDProps> = ({
   objectivesCount = 3,
   tutorialHighlight = null,
   isTutorial = false,
+  paragemEvent = null,
+  onResolveParagemEvent,
 }) => {
   // Dynamic Floating Joystick State
   const [isTouchActive, setIsTouchActive] = useState(false);
@@ -252,6 +258,9 @@ const HUDComponent: React.FC<HUDProps> = ({
         paddingRight: 'max(clamp(10px, 2.2vw, 24px), env(safe-area-inset-right, 0px))',
       }}
     >
+      {/* World Space Floating Passenger Badges (3D coordinates projected above character heads) */}
+      <WorldSpaceCanvas engine={engine} passengers={passengers} taxis={taxis} />
+
       {/* ─────────────────────────────────────────────────────────────
           TOP ROW:
           [Left: Logo -> Energy -> Objectives]  |  [Right: Money+Time  Pause]
@@ -378,6 +387,30 @@ const HUDComponent: React.FC<HUDProps> = ({
             <SpriteIcon name="effect_combo" className="w-[clamp(13px,1.5vw,16px)] h-[clamp(13px,1.5vw,16px)]" />
             <span className="font-anybody font-black text-white text-[clamp(10px,1.1vw,12px)] uppercase tracking-wider">
               🔥 HORA DE PONTA!
+            </span>
+          </div>
+        )}
+
+        {/* Dynamic Paragem Random Event Banner (Blitz, Troco, Engarrafamento, Chuva) */}
+        {paragemEvent && (
+          <div className="bg-[#161c28]/95 backdrop-blur-xs border-2 border-[#ffd700] px-3.5 py-1 rounded-full mb-1 flex items-center gap-2 shadow-xl animate-bounce pointer-events-auto">
+            <span className="material-symbols-outlined text-sm text-[#ffd700]">
+              {paragemEvent.icon}
+            </span>
+            <span className="font-anybody font-black text-white text-[10px] md:text-[11px] uppercase tracking-wide">
+              {paragemEvent.title}
+            </span>
+            {paragemEvent.type === 'TROCO_COMPLICADO' && onResolveParagemEvent && (
+              <button
+                type="button"
+                onClick={onResolveParagemEvent}
+                className="bg-[#ffd700] hover:bg-[#ffe16d] active:scale-95 text-[#161c28] font-space font-black text-[9px] md:text-[10px] uppercase px-2 py-0.5 rounded-lg border border-[#161c28] cursor-pointer shadow-md"
+              >
+                DAR TROCO!
+              </button>
+            )}
+            <span className="text-[10px] font-mono text-[#ffd700] font-extrabold tabular-nums">
+              {Math.ceil(paragemEvent.remainingSeconds)}s
             </span>
           </div>
         )}
