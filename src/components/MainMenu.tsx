@@ -31,7 +31,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onOpenSettings,
   onOpenGuide,
 }) => {
-  const levelTitle = getLevelTitle(stats.level);
+  const levelTitle = stats.levelTitle || getLevelTitle(stats.level);
   const [isTestCalling, setIsTestCalling] = useState(false);
   const [shoutText, setShoutText] = useState('VIANA DIRETO!');
 

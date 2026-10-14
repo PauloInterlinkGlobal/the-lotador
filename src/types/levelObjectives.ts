@@ -220,8 +220,21 @@ export function getObjectiveVisuals(type: ObjectiveType) {
   }
 }
 
+export interface ObjectiveEvaluationSummary {
+  type: ObjectiveType;
+  description: string;
+  completed: boolean;
+  current: number;
+  target: number;
+  displayProgress: string;
+}
+
 export interface LevelEvaluation {
   isVictory: boolean;
+  allMissionsDone: boolean;
+  missionsTotal: number;
+  missionsDone: number;
+  objectivesSummary: ObjectiveEvaluationSummary[];
   stars: number;
   starsBreakdown: {
     star1: boolean;
@@ -246,51 +259,69 @@ export function evaluateLevelResult(
   sprintCount: number = 0,
   maxCombo: number = 1
 ): LevelEvaluation {
-  let primaryPassed = true;
-  let primaryReason = '';
+  const objectivesSummary: ObjectiveEvaluationSummary[] = (level.objectives || []).map((obj) => {
+    let current = 0;
+    let completed = false;
+    let displayProgress = '';
 
-  for (const obj of level.objectives) {
     if (obj.type === 'PASSENGERS_DELIVERED' || obj.type === 'LOAD_PASSENGERS') {
-      if (passengersServed < obj.target_value) {
-        primaryPassed = false;
-        primaryReason = `Entregaste ${passengersServed}/${obj.target_value} passageiros`;
-      }
+      current = passengersServed;
+      completed = passengersServed >= obj.target_value;
+      displayProgress = `${current}/${obj.target_value} passageiros`;
     } else if (obj.type === 'MONEY_EARNED' || obj.type === 'EARN_KZ') {
-      if (earnedKz < obj.target_value) {
-        primaryPassed = false;
-        primaryReason = `Arrecadaste ${earnedKz}/${obj.target_value} Kz`;
-      }
+      current = earnedKz;
+      completed = earnedKz >= obj.target_value;
+      displayProgress = `${current.toLocaleString()}/${obj.target_value.toLocaleString()} Kz`;
     } else if (obj.type === 'FULL_CAPACITY_TRIPS') {
-      if (taxisLoaded < obj.target_value) {
-        primaryPassed = false;
-        primaryReason = `Lotaste ${taxisLoaded}/${obj.target_value} carrinhas`;
-      }
+      current = taxisLoaded;
+      completed = taxisLoaded >= obj.target_value;
+      displayProgress = `${current}/${obj.target_value} carrinhas`;
     } else if (obj.type === 'BEAT_RIVAL') {
-      if (disputesWon < obj.target_value) {
-        primaryPassed = false;
-        primaryReason = `Venceste ${disputesWon}/${obj.target_value} disputas com o rival`;
-      }
+      current = disputesWon;
+      completed = disputesWon >= obj.target_value;
+      displayProgress = `${current}/${obj.target_value} disputas`;
     } else if (obj.type === 'NO_COLLISIONS' || obj.type === 'NO_CRASHES') {
-      if (obstacleCollisions > 0) {
-        primaryPassed = false;
-        primaryReason = `Tiveste ${obstacleCollisions} batidas com vendedores ou fiscais`;
-      }
+      current = obstacleCollisions;
+      completed = obstacleCollisions === 0;
+      displayProgress = completed ? '0 colisões (Perfeito)' : `${current} batidas`;
     } else if (obj.type === 'FINISH_UNDER_TIME') {
-      if (durationSeconds > obj.target_value) {
-        primaryPassed = false;
-        primaryReason = `Demoraste ${durationSeconds}s (meta era menos de ${obj.target_value}s)`;
-      }
+      current = durationSeconds;
+      completed = durationSeconds <= obj.target_value;
+      displayProgress = `${current}s (meta < ${obj.target_value}s)`;
     } else if (obj.type === 'USE_SPRINT') {
-      if (sprintCount < obj.target_value) {
-        primaryPassed = false;
-        primaryReason = `Usaste o sprint ${sprintCount}/${obj.target_value} vezes`;
-      }
+      current = sprintCount;
+      completed = sprintCount >= obj.target_value;
+      displayProgress = `${current}/${obj.target_value} corridas`;
     } else if (obj.type === 'COMBO') {
-      if (maxCombo < obj.target_value) {
-        primaryPassed = false;
-        primaryReason = `Alcançaste combo x${maxCombo} (meta era x${obj.target_value})`;
-      }
+      current = maxCombo;
+      completed = maxCombo >= obj.target_value;
+      displayProgress = `x${current} (meta x${obj.target_value})`;
+    } else {
+      current = obj.current_value || 0;
+      completed = obj.completed || current >= obj.target_value;
+      displayProgress = `${current}/${obj.target_value}`;
     }
+
+    return {
+      type: obj.type,
+      description: obj.description,
+      completed,
+      current,
+      target: obj.target_value,
+      displayProgress,
+    };
+  });
+
+  const missionsTotal = objectivesSummary.length;
+  const missionsDone = objectivesSummary.filter((o) => o.completed).length;
+  const allMissionsDone = missionsTotal > 0 ? missionsDone === missionsTotal : true;
+
+  // Primary check: all objectives must pass
+  const primaryPassed = allMissionsDone;
+  let primaryReason = '';
+  if (!allMissionsDone) {
+    const pending = objectivesSummary.filter((o) => !o.completed);
+    primaryReason = pending.map((p) => `${p.description} (${p.displayProgress})`).join(' • ');
   }
 
   // Star 1: Complete primary objectives
@@ -325,6 +356,10 @@ export function evaluateLevelResult(
 
   return {
     isVictory: star1,
+    allMissionsDone,
+    missionsTotal,
+    missionsDone,
+    objectivesSummary,
     stars: starsCount,
     starsBreakdown: {
       star1,
@@ -335,6 +370,6 @@ export function evaluateLevelResult(
     firstTimeClearBonus: star1 ? baseRewardKz : 0,
     bonusKz,
     bonusXp,
-    failReason: star1 ? undefined : (primaryReason || 'Tempo esgotado antes de atingir as metas da fase'),
+    failReason: star1 ? undefined : (primaryReason || 'Tempo esgotado antes de atingir todas as metas da fase'),
   };
 }

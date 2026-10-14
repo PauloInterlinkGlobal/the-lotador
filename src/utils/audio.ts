@@ -254,6 +254,44 @@ class SoundEngine {
     });
   }
 
+  // Web Audio Synth Fanfarra de subida de nível triunfante (sem ficheiro externo, 100% tolerante)
+  public playLevelUpFanfare() {
+    try {
+      const ctx = this.getContext();
+      if (!ctx || this.isMuted) return;
+      const now = ctx.currentTime;
+      const dest = this.getSfxDestination() || ctx.destination;
+
+      // Sequência arpejada épica com acorde final sustentado
+      const notes = [
+        { freq: 440.0, time: 0.0, dur: 0.1 },   // A4
+        { freq: 554.37, time: 0.08, dur: 0.1 }, // C#5
+        { freq: 659.25, time: 0.16, dur: 0.12 }, // E5
+        { freq: 880.0, time: 0.26, dur: 0.45 },  // A5
+        { freq: 1108.73, time: 0.26, dur: 0.45 }, // C#6
+      ];
+
+      notes.forEach((n) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(n.freq, now + n.time);
+
+        gain.gain.setValueAtTime(0.001, now + n.time);
+        gain.gain.linearRampToValueAtTime(0.2, now + n.time + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + n.time + n.dur);
+
+        osc.connect(gain);
+        gain.connect(dest);
+
+        osc.start(now + n.time);
+        osc.stop(now + n.time + n.dur);
+      });
+    } catch (e) {
+      // Ignora silenciosamente se o navegador suspender áudio
+    }
+  }
+
   // Horn sound
   public playHorn() {
     const ctx = this.getContext();

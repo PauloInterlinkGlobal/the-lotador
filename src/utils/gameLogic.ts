@@ -102,6 +102,20 @@ export function getRouteTheme(route: RouteType): {
         borderColor: 'border-blue-400',
         textColor: 'text-blue-300',
       };
+    case 'KILAMBA':
+      return {
+        label: 'KILAMBA',
+        colorHex: '#ec4899',
+        borderColor: 'border-pink-400',
+        textColor: 'text-pink-300',
+      };
+    case 'BENFICA':
+      return {
+        label: 'BENFICA',
+        colorHex: '#ef4444',
+        borderColor: 'border-red-400',
+        textColor: 'text-red-300',
+      };
     default:
       return {
         label: route,

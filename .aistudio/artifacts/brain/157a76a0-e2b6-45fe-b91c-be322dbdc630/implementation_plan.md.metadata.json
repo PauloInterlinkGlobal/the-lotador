@@ -1,0 +1,6 @@
+{
+  "summary": "Plano de implementação do ciclo completo de jogabilidade de LOTADOR – Luanda Taxi Craze, integrando as 3 baias de táxi, inteligência artificial com dificuldade progressiva de rivais, ciclo de estados dos passageiros (chamar, seguir, embarcar, disputar), e controles com detecção automática de teclado e joystick touch.",
+  "updatedAt": "2026-10-14T10:49:43.361645712Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

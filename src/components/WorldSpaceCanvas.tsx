@@ -85,6 +85,20 @@ const ROUTE_THEMES: Record<
     text: 'text-blue-300',
     bgBadge: 'bg-blue-950/40',
   },
+  KILAMBA: {
+    border: 'border-pink-500',
+    glow: 'shadow-pink-500/40',
+    dot: 'bg-pink-400',
+    text: 'text-pink-300',
+    bgBadge: 'bg-pink-950/40',
+  },
+  BENFICA: {
+    border: 'border-red-500',
+    glow: 'shadow-red-500/40',
+    dot: 'bg-red-400',
+    text: 'text-red-300',
+    bgBadge: 'bg-red-950/40',
+  },
 };
 
 /**

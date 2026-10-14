@@ -5,9 +5,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PlayerStats, MatchResults, Taxi, Passenger, PassengerDispute, GameSettings } from './types/game';
 import { loadPlayerStats, savePlayerStats, getXpForNextLevel, DEFAULT_MISSIONS, recordLevelCompletion, loadSettings, saveSettings } from './utils/storage';
+import { applyProgressReward } from './game/storage';
 import { storageManager } from './services/storageService';
 import { soundManager } from './utils/audio';
-import { GameEngine } from './game/GameEngine';
+import { GameEngine, EngineResult } from './game/engine';
 
 import { MainMenu } from './components/MainMenu';
 import { HUD } from './components/HUD';
@@ -86,7 +87,7 @@ export default function App() {
   );
 
   // Results State
-  const [matchResults, setMatchResults] = useState<MatchResults | null>(null);
+  const [matchResults, setMatchResults] = useState<EngineResult | null>(null);
 
   // Asset Preloader State
   const [isLoadingMatch, setIsLoadingMatch] = useState(false);
@@ -531,6 +532,19 @@ export default function App() {
               victoryParam !== undefined
                 ? victoryParam
                 : engine.passengersServedCount >= 2 || engine.taxisLoadedCount >= 1,
+            allMissionsDone: false, // Tutorial does not trigger regular progression level-up
+            missionsTotal: 1,
+            missionsDone: engine.passengersServedCount >= 2 || engine.taxisLoadedCount >= 1 ? 1 : 0,
+            objectivesSummary: [
+              {
+                type: 'LOAD_PASSENGERS' as const,
+                description: 'Atender passageiros e despachar carrinhas no treino',
+                completed: engine.passengersServedCount >= 2 || engine.taxisLoadedCount >= 1,
+                current: engine.passengersServedCount,
+                target: 2,
+                displayProgress: `${engine.passengersServedCount}/2 passageiros`,
+              },
+            ],
             stars: 1,
             starsBreakdown: { star1: true, star2: false, star3: false },
             isParagemDominada: false,
@@ -552,11 +566,11 @@ export default function App() {
           );
 
       const isVictory = victoryParam !== undefined ? victoryParam : evalResult.isVictory;
-      const totalEarnedKz = engine.matchKz + (isVictory ? evalResult.bonusKz : 0);
-      const totalEarnedXp = engine.matchXp + (isVictory ? evalResult.bonusXp : 0);
+      const baseEarnedKz = engine.matchKz + (isVictory ? evalResult.bonusKz : 0);
+      const baseEarnedXp = engine.matchXp + (isVictory ? evalResult.bonusXp : 0);
 
-      // Record level completion in progression storage (applies to standard levels and tutorial Level 1 victory)
-      let updatedStats = { ...stats };
+      // Record level completion in progression storage (for stars and level unlocks)
+      let currentProgressStats = { ...stats };
       if (isVictory) {
         const recordResult = recordLevelCompletion(
           stats,
@@ -564,35 +578,29 @@ export default function App() {
           evalResult.stars,
           engine.matchKz
         );
-        updatedStats = recordResult.updatedStats;
+        currentProgressStats = recordResult.updatedStats;
       }
 
-      // Update basic player wallet and XP
-      let newMoney = updatedStats.money + totalEarnedKz;
-      let newXp = updatedStats.xp + totalEarnedXp;
-      let oldLevel = updatedStats.level;
-      let newLevel = updatedStats.level;
-      let newTaxisLoaded = updatedStats.taxisLoaded + engine.taxisLoadedCount;
-      let newPassengers = updatedStats.passengersServed + engine.passengersServedCount;
+      // Regra: Subida de nível apenas se TODOS os objetivos ficarem cumpridos (sem subida automática por XP)
+      const allMissionsDone = !isTutorial && evalResult.allMissionsDone === true;
+      const shouldLevelUp = allMissionsDone;
 
-      // Level up checks
-      let reqXp = getXpForNextLevel(newLevel);
-      while (newXp >= reqXp) {
-        newXp -= reqXp;
-        newLevel++;
-        reqXp = getXpForNextLevel(newLevel);
-      }
+      // Aplica recompensas, persistindo XP contínuo e subindo nível exclusivamente quando shouldLevelUp for verdadeiro
+      const rewardResult = applyProgressReward({
+        currentStats: currentProgressStats,
+        earnedMoney: baseEarnedKz,
+        earnedXp: baseEarnedXp,
+        levelUp: shouldLevelUp,
+        isTutorial,
+      });
 
-      updatedStats = {
-        ...updatedStats,
-        money: newMoney,
-        xp: newXp,
-        level: newLevel,
-        bestScore: Math.max(updatedStats.bestScore, engine.matchKz),
-        taxisLoaded: newTaxisLoaded,
-        passengersServed: newPassengers,
-        maxCombo: Math.max(updatedStats.maxCombo, engine.combo),
-        tutorialCompleted: isTutorial && isVictory ? true : updatedStats.tutorialCompleted,
+      let updatedStats = {
+        ...rewardResult.updatedStats,
+        bestScore: Math.max(rewardResult.updatedStats.bestScore, engine.matchKz),
+        taxisLoaded: rewardResult.updatedStats.taxisLoaded + engine.taxisLoadedCount,
+        passengersServed: rewardResult.updatedStats.passengersServed + engine.passengersServedCount,
+        maxCombo: Math.max(rewardResult.updatedStats.maxCombo, engine.combo),
+        tutorialCompleted: isTutorial && isVictory ? true : rewardResult.updatedStats.tutorialCompleted,
       };
 
       savePlayerStats(updatedStats);
@@ -613,7 +621,7 @@ export default function App() {
           id: `match_${Date.now()}`,
           timestamp: Date.now(),
           score: engine.matchKz,
-          moneyEarned: totalEarnedKz,
+          moneyEarned: rewardResult.totalEarnedKz,
           taxisLoaded: engine.taxisLoadedCount,
           passengersServed: engine.passengersServedCount,
           zoneId: currentLevel.chapter_id || stats.selectedMapId || 'cazenga',
@@ -622,12 +630,12 @@ export default function App() {
         updatedStats
       );
 
-      const res: MatchResults = {
+      const res: EngineResult = {
         taxisLoaded: engine.taxisLoadedCount,
         passengersServed: engine.passengersServedCount,
         maxCombo: engine.combo,
-        earnedMoney: totalEarnedKz,
-        earnedXp: totalEarnedXp,
+        earnedMoney: rewardResult.totalEarnedKz,
+        earnedXp: rewardResult.totalEarnedXp,
         isNewRecord,
         duration,
         isTutorial,
@@ -642,9 +650,18 @@ export default function App() {
         isParagemDominada: evalResult.isParagemDominada,
         firstTimeClearBonus: evalResult.firstTimeClearBonus,
         failReason: evalResult.failReason,
-        oldLevel,
-        newLevel,
-        levelUp: newLevel > oldLevel,
+        oldLevel: rewardResult.oldLevel,
+        newLevel: rewardResult.newLevel,
+        levelUp: rewardResult.levelUp,
+        newTitle: rewardResult.newTitle,
+        allMissionsDone: evalResult.allMissionsDone,
+        missionsTotal: evalResult.missionsTotal,
+        missionsDone: evalResult.missionsDone,
+        levelUpRewardKz: rewardResult.bonusKz,
+        levelUpRewardXp: rewardResult.bonusXp,
+        skillPointsEarned: rewardResult.skillPointsEarned,
+        totalSkillPoints: rewardResult.totalSkillPoints,
+        objectivesSummary: evalResult.objectivesSummary,
       };
 
       setMatchResults(res);

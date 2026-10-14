@@ -86,6 +86,14 @@ const HUDComponent: React.FC<HUDProps> = ({
   const touchIdRef = useRef<number | null>(null);
   const isMouseDownRef = useRef(false);
 
+  // Auto-detection of Touch vs Keyboard controls
+  const [inputMethod, setInputMethod] = useState<'TOUCH' | 'KEYBOARD'>(() => {
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+      return 'TOUCH';
+    }
+    return 'KEYBOARD';
+  });
+
   // Edge Indicators & Contextual Action State
   const [edgeIndicators, setEdgeIndicators] = useState<OffScreenTaxiIndicator[]>([]);
   const [canBoard, setCanBoard] = useState(false);
@@ -126,7 +134,7 @@ const HUDComponent: React.FC<HUDProps> = ({
   // Active taxi waiting or loading
   const activeTaxi = taxis.find((t) => t.state === 'WAITING' || t.state === 'LOADING');
 
-  // Keyboard controls listener for Desktop play!
+  // Keyboard controls listener for Desktop play (Auto-switches to KEYBOARD mode)
   useEffect(() => {
     const keysPressed = new Set<string>();
 
@@ -150,6 +158,7 @@ const HUDComponent: React.FC<HUDProps> = ({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
+      setInputMethod('KEYBOARD');
       keysPressed.add(e.code);
       if (e.code === 'KeyE') onCallAction();
       if (e.code === 'Space') onInteractAction();
@@ -191,6 +200,7 @@ const HUDComponent: React.FC<HUDProps> = ({
   };
 
   const handleTouchZoneStart = (e: React.TouchEvent) => {
+    setInputMethod('TOUCH');
     if (touchIdRef.current !== null) return;
     const touch = e.changedTouches[0];
     touchIdRef.current = touch.identifier;
@@ -316,7 +326,7 @@ const HUDComponent: React.FC<HUDProps> = ({
             </span>
           </button>
 
-          {/* 4. Active Paragem Taxis & Destination Matching Bar */}
+          {/* 4. Active Paragem Taxis & 3 Fixed Baias (Viana, Cacuaco, Kilamba) */}
           <div className="flex flex-col gap-1 pointer-events-auto">
             {followedPassenger && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/90 border border-emerald-400 text-white shadow-md animate-pulse">
@@ -324,37 +334,50 @@ const HUDComponent: React.FC<HUDProps> = ({
                 <span className="text-[9px] font-anybody font-black uppercase text-emerald-300">
                   CONDUZINDO:
                 </span>
-                <span className="text-[10px] font-anybody font-black uppercase text-white bg-emerald-600/80 px-1 rounded">
+                <span className="text-[10px] font-anybody font-black uppercase text-white bg-emerald-600/80 px-1.5 rounded">
                   {followedPassenger.destination}
                 </span>
               </div>
             )}
 
-            {activeTaxisAtStop.length > 0 && (
-              <div className="flex items-center gap-1 px-2 py-0.8 rounded-full bg-[#161c28]/90 backdrop-blur-xs border border-white/10 shadow-md">
-                <span className="text-[9px] font-space font-black text-slate-300 mr-0.5">🚐</span>
-                {activeTaxisAtStop.map((t) => {
-                  const free = Math.max(0, t.capacity - t.currentPassengers);
-                  const isMatch = followedPassenger && followedPassenger.destination === t.route;
-                  return (
-                    <div
-                      key={t.id}
-                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-space font-bold transition-all ${
-                        isMatch
-                          ? 'bg-[#fe6b00] text-white ring-2 ring-[#ffd700] animate-bounce scale-105'
-                          : free === 0
-                          ? 'bg-slate-800 text-slate-400'
-                          : 'bg-slate-800/90 text-white'
-                      }`}
-                      title={`Táxi ${t.route} (${free} vagas)`}
-                    >
-                      <span className="font-black font-anybody">{t.route}</span>
-                      <span className="text-[8px] opacity-80">({free})</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            {/* 3 Baias de Candongueiros Fixas no Topo */}
+            <div className="flex items-center gap-1 px-2 py-0.8 rounded-full bg-[#161c28]/90 backdrop-blur-xs border border-white/10 shadow-md">
+              <span className="text-[9px] font-space font-black text-slate-300 mr-0.5">🚐 BAIAS:</span>
+              {[
+                { slot: 0, name: 'B1', defaultRoute: 'VIANA' },
+                { slot: 1, name: 'B2', defaultRoute: 'CACUACO' },
+                { slot: 2, name: 'B3', defaultRoute: 'KILAMBA' },
+              ].map((bay) => {
+                const taxiAtBay = taxis.find(
+                  (t) => t.stopSlot === bay.slot && (t.state === 'WAITING' || t.state === 'LOADING')
+                );
+                const currentRoute = taxiAtBay ? taxiAtBay.route : bay.defaultRoute;
+                const free = taxiAtBay ? Math.max(0, taxiAtBay.capacity - taxiAtBay.currentPassengers) : 0;
+                const isMatch = followedPassenger && followedPassenger.destination === currentRoute && taxiAtBay && free > 0;
+
+                return (
+                  <div
+                    key={bay.slot}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-space font-bold transition-all ${
+                      isMatch
+                        ? 'bg-[#fe6b00] text-white ring-2 ring-[#ffd700] animate-bounce scale-105 shadow-md'
+                        : !taxiAtBay
+                        ? 'bg-slate-900/80 text-slate-500 border border-white/5'
+                        : free === 0
+                        ? 'bg-slate-800 text-slate-400'
+                        : 'bg-slate-800/90 text-white'
+                    }`}
+                    title={`${bay.name}: ${currentRoute} ${taxiAtBay ? `(${free} vagas)` : '(A chegar...)'}`}
+                  >
+                    <span className="text-[7.5px] font-mono opacity-70">{bay.name}</span>
+                    <span className="font-black font-anybody">{currentRoute}</span>
+                    <span className="text-[8px] opacity-85">
+                      {taxiAtBay ? `(${free})` : '...'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -466,6 +489,20 @@ const HUDComponent: React.FC<HUDProps> = ({
                 COMBO x{combo}
               </span>
             </div>
+          </div>
+        )}
+
+        {/* Keyboard Controls Guidance Pill (Visible when playing on Desktop / Keyboard) */}
+        {inputMethod === 'KEYBOARD' && (
+          <div className="bg-[#161c28]/85 backdrop-blur-xs border border-white/15 px-3 py-1 rounded-full mt-1 flex items-center gap-1.5 shadow-md text-[9px] font-mono text-slate-300">
+            <span className="text-white font-bold">🎮 TECLADO:</span>
+            <span className="text-[#ffd700] font-bold">WASD / Setas</span>
+            <span>•</span>
+            <span className="text-[#ffd700] font-bold">[E] Chamar</span>
+            <span>•</span>
+            <span className="text-[#fe6b00] font-bold">[Espaço] Lotar</span>
+            <span>•</span>
+            <span className="text-cyan-400 font-bold">[Shift] Correr</span>
           </div>
         )}
       </div>
@@ -670,11 +707,11 @@ const HUDComponent: React.FC<HUDProps> = ({
         <div className="flex flex-col items-start select-none">
           <div
             className={`w-[clamp(76px,11.5vw,104px)] h-[clamp(76px,11.5vw,104px)] max-w-[26vh] max-h-[26vh] rounded-full bg-slate-950/25 backdrop-blur-xs border-2 border-[#ffd700]/75 flex items-center justify-center relative touch-none shadow-md transition-all ${
-              isTouchActive ? 'opacity-30' : 'opacity-75'
+              isTouchActive ? 'opacity-30' : inputMethod === 'KEYBOARD' ? 'opacity-35 hover:opacity-85' : 'opacity-75'
             } ${
               tutorialHighlight === 'JOYSTICK' ? 'ring-4 ring-[#ffd700] ring-offset-2 ring-offset-black animate-pulse scale-105' : ''
             }`}
-            title="Área do Manípulo (Toque em qualquer ponto desta zona ou WASD)"
+            title="Área do Manípulo (Toque em qualquer ponto desta zona ou use WASD)"
           >
             {/* Rest Knob */}
             <div
@@ -709,7 +746,8 @@ const HUDComponent: React.FC<HUDProps> = ({
           <button
             type="button"
             onClick={canBoard ? onInteractAction : onCallAction}
-            className={`w-[clamp(54px,7.5vw,76px)] h-[clamp(54px,7.5vw,76px)] max-w-[16vh] max-h-[16vh] rounded-full active:scale-90 border-2 border-[#161c28] shadow-md flex flex-col items-center justify-center cursor-pointer transition-all select-none ${
+            onTouchStart={() => setInputMethod('TOUCH')}
+            className={`w-[clamp(54px,7.5vw,76px)] h-[clamp(54px,7.5vw,76px)] max-w-[16vh] max-h-[16vh] rounded-full active:scale-90 border-2 border-[#161c28] shadow-md flex flex-col items-center justify-center cursor-pointer transition-all select-none relative ${
               canBoard
                 ? 'bg-[#fe6b00] hover:bg-[#ff7d1a] ring-4 ring-[#ffd700] ring-offset-2 ring-offset-black animate-pulse shadow-xl scale-105'
                 : 'bg-[#ffd700] hover:bg-[#ffe066]'
@@ -718,6 +756,12 @@ const HUDComponent: React.FC<HUDProps> = ({
             }`}
             title={canBoard ? 'LOTAR TÁXI [ESPAÇO]' : 'CHAMAR PASSAGEIROS [E]'}
           >
+            {/* Keyboard Hotkey Badge */}
+            {inputMethod === 'KEYBOARD' && (
+              <span className="absolute -top-1.5 px-1 py-0.2 bg-[#161c28] border border-white/40 text-[8px] font-mono font-black text-[#ffd700] rounded-sm leading-none pointer-events-none shadow-xs">
+                {canBoard ? 'ESPAÇO' : 'E'}
+              </span>
+            )}
             <SpriteIcon
               name="taxi_candongueiro_drive_0"
               className="w-[clamp(24px,3.2vw,32px)] h-[clamp(16px,2.2vw,22px)] max-h-[6vh] pointer-events-none"
@@ -734,15 +778,24 @@ const HUDComponent: React.FC<HUDProps> = ({
           {/* Botão CORRER (Inferior, Azul) */}
           <button
             type="button"
-            onTouchStart={() => onRunToggle(true)}
+            onTouchStart={() => {
+              setInputMethod('TOUCH');
+              onRunToggle(true);
+            }}
             onTouchEnd={() => onRunToggle(false)}
             onMouseDown={() => onRunToggle(true)}
             onMouseUp={() => onRunToggle(false)}
-            className={`w-[clamp(52px,7.0vw,72px)] h-[clamp(52px,7.0vw,72px)] max-w-[15vh] max-h-[15vh] rounded-full bg-[#006399] hover:bg-[#0077b6] active:scale-90 border-2 border-white/80 shadow-md flex flex-col items-center justify-center cursor-pointer transition-all select-none ${
+            className={`w-[clamp(52px,7.0vw,72px)] h-[clamp(52px,7.0vw,72px)] max-w-[15vh] max-h-[15vh] rounded-full bg-[#006399] hover:bg-[#0077b6] active:scale-90 border-2 border-white/80 shadow-md flex flex-col items-center justify-center cursor-pointer transition-all select-none relative ${
               tutorialHighlight === 'RUN' ? 'ring-4 ring-cyan-400 ring-offset-2 ring-offset-black animate-bounce scale-110 shadow-2xl' : ''
             }`}
             title="CORRER [SHIFT]"
           >
+            {/* Keyboard Hotkey Badge */}
+            {inputMethod === 'KEYBOARD' && (
+              <span className="absolute -top-1.5 px-1 py-0.2 bg-[#161c28] border border-cyan-400/50 text-[8px] font-mono font-black text-cyan-300 rounded-sm leading-none pointer-events-none shadow-xs">
+                SHIFT
+              </span>
+            )}
             <SpriteIcon
               name="effect_turbo"
               className="w-[clamp(20px,2.8vw,28px)] h-[clamp(16px,2.2vw,22px)] max-h-[6vh] pointer-events-none"

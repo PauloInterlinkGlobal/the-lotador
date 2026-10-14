@@ -9,7 +9,14 @@ export type PassengerType =
   | 'OBSERVADOR'
   | 'EXIGENTE'
   | 'CORRERIA'
-  | 'ESPECIAL';
+  | 'ESPECIAL'
+  | 'TRABALHADOR'
+  | 'ESTUDANTE'
+  | 'IDOSO'
+  | 'JOVEM'
+  | 'EXECUTIVO'
+  | 'IMPACIENTE'
+  | 'VIP';
 
 export type PassengerState = 
   | 'SPAWNING'
@@ -19,9 +26,13 @@ export type PassengerState =
   | 'FOLLOWING'
   | 'BOARDING'
   | 'COMPLETED'
-  | 'LEAVING';
+  | 'LEAVING'
+  | 'IDLE'
+  | 'CALLED'
+  | 'BOARDED'
+  | 'LOST';
 
-export type RouteType = 'VIANA' | 'TALATONA' | 'CENTRO' | 'GOLFE 2' | 'CACUACO' | 'CAMAMA';
+export type RouteType = 'VIANA' | 'TALATONA' | 'CENTRO' | 'GOLFE 2' | 'CACUACO' | 'CAMAMA' | 'KILAMBA' | 'BENFICA';
 
 export type TaxiType = 
   | 'NORMAL'
@@ -156,6 +167,7 @@ export interface PlayerStats {
 
   // Customization
   selectedGender: 'M' | 'F';
+  selectedCharacter?: 'KITO' | 'ZECA' | 'TIO_BETY' | 'NELO' | 'M' | 'F';
   selectedShirt: number;
   selectedPants: number;
   selectedAccessory: number;
@@ -168,6 +180,8 @@ export interface PlayerStats {
   highestUnlockedLevel?: number; // Highest level unlocked (1 - 20)
   levelStars?: Record<number, number>; // Stars (1-3) earned per level
   levelHighScores?: Record<number, number>; // Best Kz score per level
+  skillPoints?: number; // Pontos de Habilidade ganhos ao subir de nível
+  levelTitle?: string; // Título atual (ex: Novato, Lotador, etc.)
 }
 
 export interface CampaignZone {
@@ -242,12 +256,22 @@ export interface MatchResults {
   oldLevel?: number;
   newLevel?: number;
   levelUp?: boolean;
+  newTitle?: string;
+  allMissionsDone?: boolean;
+  missionsTotal?: number;
+  missionsDone?: number;
+  levelUpRewardKz?: number;
+  levelUpRewardXp?: number;
+  skillPointsEarned?: number;
+  totalSkillPoints?: number;
   nextLevelUnlocked?: number;
   objectivesSummary?: {
+    type?: string;
     description: string;
     completed: boolean;
     current: number;
     target: number;
+    displayProgress?: string;
   }[];
 }
 

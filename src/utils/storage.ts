@@ -3,6 +3,7 @@
  */
 
 import { PlayerStats, Mission, GameSettings, CampaignZone } from '../types/game';
+import { calculateLevelUpRewards } from '../game/config';
 
 const SAVE_KEY = 'LOTADOR_SAVE_V1';
 const BACKUP_SAVE_KEY = 'LOTADOR_SAVE_V1_BACKUP';
@@ -81,6 +82,7 @@ export const DEFAULT_PLAYER_STATS: PlayerStats = {
   upgradeTaxiSpeed: 0,
   upgradeTaxiCapacity: 0,
   selectedGender: 'M',
+  selectedCharacter: 'KITO',
   selectedShirt: 0,
   selectedPants: 0,
   selectedAccessory: 0,
@@ -90,6 +92,8 @@ export const DEFAULT_PLAYER_STATS: PlayerStats = {
   highestUnlockedLevel: 1,
   levelStars: {},
   levelHighScores: {},
+  skillPoints: 0,
+  levelTitle: 'Aprendiz',
 };
 
 export const isMobileOrLowEnd = typeof navigator !== 'undefined' && (
@@ -302,3 +306,91 @@ export function recordLevelCompletion(
   savePlayerStats(updatedStats);
   return { updatedStats, newUnlockedLevel };
 }
+
+export interface ApplyProgressRewardParams {
+  currentStats: PlayerStats;
+  earnedMoney: number;
+  earnedXp: number;
+  levelUp: boolean;
+  targetLevel?: number;
+  isTutorial?: boolean;
+}
+
+export interface ProgressRewardResult {
+  updatedStats: PlayerStats;
+  levelUp: boolean;
+  oldLevel: number;
+  newLevel: number;
+  bonusKz: number;
+  bonusXp: number;
+  totalEarnedKz: number;
+  totalEarnedXp: number;
+  skillPointsEarned: number;
+  totalSkillPoints: number;
+  oldTitle: string;
+  newTitle: string;
+}
+
+/**
+ * Aplica os ganhos da partida e efectua a subida de nível EXCLUSIVAMENTE
+ * se todos os objetivos tiverem sido cumpridos (levelUp = true).
+ * O XP continua a acumular normalmente sem disparar subida automática por limiar.
+ */
+export function applyProgressReward({
+  currentStats,
+  earnedMoney,
+  earnedXp,
+  levelUp,
+  targetLevel,
+  isTutorial = false,
+}: ApplyProgressRewardParams): ProgressRewardResult {
+  const oldLevel = currentStats.level || 1;
+  let newLevel = oldLevel;
+  let bonusKz = 0;
+  let bonusXp = 0;
+  let skillPointsEarned = 0;
+
+  // Subida de nível apenas se todos os objetivos forem concluídos e não for o tutorial
+  if (levelUp && !isTutorial) {
+    newLevel = targetLevel ?? (oldLevel + 1);
+    const rewards = calculateLevelUpRewards(newLevel);
+    bonusKz = rewards.bonusKz;
+    bonusXp = rewards.bonusXp;
+    skillPointsEarned = rewards.skillPoints;
+  }
+
+  const totalEarnedKz = earnedMoney + bonusKz;
+  const totalEarnedXp = earnedXp + bonusXp;
+
+  const oldTitle = currentStats.levelTitle || getLevelTitle(oldLevel);
+  const newTitle = getLevelTitle(newLevel);
+  const currentSkillPoints = currentStats.skillPoints ?? 0;
+  const totalSkillPoints = currentSkillPoints + skillPointsEarned;
+
+  const updatedStats: PlayerStats = {
+    ...currentStats,
+    money: currentStats.money + totalEarnedKz,
+    xp: currentStats.xp + totalEarnedXp,
+    level: newLevel,
+    levelTitle: newTitle,
+    skillPoints: totalSkillPoints,
+  };
+
+  savePlayerStats(updatedStats);
+
+  return {
+    updatedStats,
+    levelUp: newLevel > oldLevel,
+    oldLevel,
+    newLevel,
+    bonusKz,
+    bonusXp,
+    totalEarnedKz,
+    totalEarnedXp,
+    skillPointsEarned,
+    totalSkillPoints,
+    oldTitle,
+    newTitle,
+  };
+}
+

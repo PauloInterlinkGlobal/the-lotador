@@ -319,8 +319,9 @@ export class GameEngine {
   public isRunning = false;
   public stamina = 100;
   public maxStamina = 100;
-  private staminaRecoveryRate = 20;
-  private staminaDrainRate = 35;
+  public isStaminaExhausted = false;
+  private staminaRecoveryRate = 12; // Regenera 12 pts/s quando não estiver correndo
+  private staminaDrainRate = 18;    // Drena 18 pts/s enquanto o botão CORRER estiver pressionado
   public playerStats: PlayerStats;
   public isTutorial = false;
   public levelConfig: LevelData | null = null;
@@ -391,11 +392,11 @@ export class GameEngine {
   private callRadiusMesh!: THREE.Mesh;
   private callPulseTimer = 0;
 
-  // Taxi Slots
-  private taxiSlots = [
-    { x: -9, z: -4, occupied: false, taxiId: null as string | null },
-    { x: 0, z: -4, occupied: false, taxiId: null as string | null },
-    { x: 9, z: -4, occupied: false, taxiId: null as string | null },
+  // 3 Baias de Táxi Fixas no Topo da Rua (Baia 1: Viana, Baia 2: Cacuaco, Baia 3: Kilamba)
+  public taxiSlots = [
+    { id: 0, bayName: 'BAIA 1', defaultRoute: 'VIANA' as RouteType, x: -9, z: -4, occupied: false, taxiId: null as string | null },
+    { id: 1, bayName: 'BAIA 2', defaultRoute: 'CACUACO' as RouteType, x: 0, z: -4, occupied: false, taxiId: null as string | null },
+    { id: 2, bayName: 'BAIA 3', defaultRoute: 'KILAMBA' as RouteType, x: 9, z: -4, occupied: false, taxiId: null as string | null },
   ];
 
   // Spawn Timers
@@ -480,9 +481,23 @@ export class GameEngine {
     const selectedZone = CAMPAIGN_ZONES.find((z) => z.id === playerStats.selectedMapId);
     this.campaignZoneMultiplier = selectedZone ? selectedZone.bonusKzMultiplier : 1.0;
 
-    // Apply Upgrades to Player
-    this.playerSpeed = 7.5 + playerStats.upgradeSpeed * 0.6;
-    this.maxStamina = 100 + playerStats.upgradeStamina * 15;
+    // Apply Upgrades and Character traits to Player
+    // 3 Personagens Selecionáveis de Luanda:
+    // - Kito: +10% de velocidade, -10% de estamina
+    // - Zeca: +20% de raio vocal, +10% de paciência dos passageiros
+    // - Tio Bety: +25% de recompensa financeira por táxi, -5% de velocidade
+    let charSpeedMult = 1.0;
+    let charStaminaMult = 1.0;
+    const char = playerStats.selectedCharacter;
+    if (char === 'KITO') {
+      charSpeedMult = 1.10;
+      charStaminaMult = 0.90;
+    } else if (char === 'TIO_BETY') {
+      charSpeedMult = 0.95;
+    }
+
+    this.playerSpeed = (7.5 + playerStats.upgradeSpeed * 0.6) * charSpeedMult;
+    this.maxStamina = (100 + playerStats.upgradeStamina * 15) * charStaminaMult;
     this.stamina = this.maxStamina;
 
     this.initThree();
@@ -811,6 +826,90 @@ export class GameEngine {
         this.createTree(x + 4, 0.4, 9);
       }
     }
+
+    // 5. Demarcações 3D das 3 Baias de Candongueiros (Baia 1: Viana, Baia 2: Cacuaco, Baia 3: Kilamba)
+    this.createTaxiBayDemarcations();
+  }
+
+  private createTaxiBayDemarcations() {
+    this.taxiSlots.forEach((slot, index) => {
+      const bayGroup = new THREE.Group();
+      bayGroup.position.set(slot.x, 0.015, slot.z);
+
+      const routeColor = index === 0 ? 0xffd700 : index === 1 ? 0xff6b00 : 0xec4899;
+      const borderMat = new THREE.MeshBasicMaterial({
+        color: routeColor,
+        transparent: true,
+        opacity: 0.85,
+      });
+
+      // Box perimeter stripes
+      const lineNorth = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 0.16), borderMat);
+      lineNorth.rotation.x = -Math.PI / 2;
+      lineNorth.position.set(0, 0, -1.6);
+      bayGroup.add(lineNorth);
+
+      const lineSouth = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 0.16), borderMat);
+      lineSouth.rotation.x = -Math.PI / 2;
+      lineSouth.position.set(0, 0, 1.6);
+      bayGroup.add(lineSouth);
+
+      const lineWest = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 3.2), borderMat);
+      lineWest.rotation.x = -Math.PI / 2;
+      lineWest.position.set(-2.8, 0, 0);
+      bayGroup.add(lineWest);
+
+      const lineEast = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 3.2), borderMat);
+      lineEast.rotation.x = -Math.PI / 2;
+      lineEast.position.set(2.8, 0, 0);
+      bayGroup.add(lineEast);
+
+      // Bay Curb Totem Sign (facing the player on the sidewalk)
+      const signGroup = new THREE.Group();
+      signGroup.position.set(slot.x, 0.4, -2.75);
+
+      const postMat = new THREE.MeshLambertMaterial({ color: 0x222a38 });
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2), postMat);
+      post.position.y = 1.1;
+      signGroup.add(post);
+
+      // Canvas Sign Plate
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#161c28';
+        if (ctx.roundRect) {
+          ctx.roundRect(4, 4, 248, 120, 16);
+          ctx.fill();
+        } else {
+          ctx.fillRect(4, 4, 248, 120);
+        }
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = index === 0 ? '#ffd700' : index === 1 ? '#fe6b00' : '#ec4899';
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(slot.bayName, 128, 52);
+
+        ctx.fillStyle = index === 0 ? '#ffd700' : index === 1 ? '#fe6b00' : '#ec4899';
+        ctx.font = '900 32px sans-serif';
+        ctx.fillText(slot.defaultRoute, 128, 98);
+      }
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.needsUpdate = true;
+      const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.position.y = 2.4;
+      sprite.scale.set(2.4, 1.2, 1);
+      signGroup.add(sprite);
+
+      this.scene.add(bayGroup);
+      this.scene.add(signGroup);
+    });
   }
 
   private createParagemSign(x: number, y: number, z: number) {
@@ -1505,19 +1604,20 @@ export class GameEngine {
         for (let i = 0; i < 6; i++) this.spawnPassenger();
       } else {
         this.spawnTaxi('VIANA');
-        this.spawnTaxi('TALATONA');
-        this.spawnTaxi('CENTRO');
+        this.spawnTaxi('CACUACO');
+        this.spawnTaxi('KILAMBA');
         for (let i = 0; i < 8; i++) this.spawnPassenger();
       }
       return;
     }
 
-    // Spawn initial Taxis
+    // Spawn initial Taxis at the 3 Baias
     this.spawnTaxi('VIANA');
-    this.spawnTaxi('TALATONA');
+    this.spawnTaxi('CACUACO');
+    this.spawnTaxi('KILAMBA');
 
     // Spawn initial Passengers
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       this.spawnPassenger();
     }
   }
@@ -1715,11 +1815,11 @@ export class GameEngine {
     const emptySlotIndex = availableSlots.findIndex((s) => !s.occupied);
     if (emptySlotIndex === -1) return;
 
-    const routes: RouteType[] = ['VIANA', 'TALATONA', 'CENTRO', 'GOLFE 2', 'CACUACO', 'CAMAMA'];
-    const route = forcedRoute || routes[Math.floor(Math.random() * routes.length)];
+    const routes: RouteType[] = ['VIANA', 'CACUACO', 'KILAMBA', 'TALATONA', 'CENTRO', 'CAMAMA'];
+    const slot = this.taxiSlots[emptySlotIndex];
+    const route = forcedRoute || slot.defaultRoute || routes[Math.floor(Math.random() * routes.length)];
     const id = 'taxi_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
 
-    const slot = this.taxiSlots[emptySlotIndex];
     slot.occupied = true;
     slot.taxiId = id;
 
@@ -1947,10 +2047,99 @@ export class GameEngine {
   public spawnPassenger() {
     if (this.passengers.length >= 12) return;
 
-    const routes: RouteType[] = ['VIANA', 'TALATONA', 'CENTRO', 'GOLFE 2', 'CACUACO', 'CAMAMA'];
-    const route = routes[Math.floor(Math.random() * routes.length)];
-    const types: PassengerType[] = ['NORMAL', 'NORMAL', 'APRESSADO', 'INDECISO', 'OBSERVADOR', 'ESPECIAL'];
-    const pType = types[Math.floor(Math.random() * types.length)];
+    // Prioritize routes of active taxis at the stop with realistic distribution
+    const activeTaxiRoutes = this.taxis
+      .filter((t) => t.state === 'WAITING' || t.state === 'LOADING')
+      .map((t) => t.route);
+    const fallbackRoutes: RouteType[] = ['VIANA', 'CACUACO', 'KILAMBA', 'TALATONA', 'CENTRO', 'CAMAMA'];
+    const candidateRoutes = activeTaxiRoutes.length > 0 && Math.random() < 0.75 ? activeTaxiRoutes : fallbackRoutes;
+    const route = candidateRoutes[Math.floor(Math.random() * candidateRoutes.length)];
+
+    // 7 Perfis de passageiros com multiplicadores de velocidade e paciência:
+    // Trabalhador, Estudante, Idoso, Jovem, Executivo, Impaciente, VIP
+    const profileWeights: { type: PassengerType; weight: number }[] = [
+      { type: 'TRABALHADOR', weight: 25 },
+      { type: 'ESTUDANTE', weight: 20 },
+      { type: 'JOVEM', weight: 15 },
+      { type: 'IDOSO', weight: 12 },
+      { type: 'IMPACIENTE', weight: 12 },
+      { type: 'EXECUTIVO', weight: 10 },
+      { type: 'VIP', weight: 6 },
+    ];
+    const totalWeight = profileWeights.reduce((acc, p) => acc + p.weight, 0);
+    let rand = Math.random() * totalWeight;
+    let selectedProfile: PassengerType = 'TRABALHADOR';
+    for (const pw of profileWeights) {
+      if (rand < pw.weight) {
+        selectedProfile = pw.type;
+        break;
+      }
+      rand -= pw.weight;
+    }
+
+    // Perfil configs
+    let baseSpeed = 3.2;
+    let basePatience = 45;
+    let baseValue = 120;
+    let urgency = 2;
+    let displayName = 'Trabalhador';
+
+    switch (selectedProfile) {
+      case 'ESTUDANTE':
+        baseSpeed = 3.8;
+        basePatience = 30;
+        baseValue = 80;
+        urgency = 3;
+        displayName = 'Estudante';
+        break;
+      case 'IDOSO':
+        baseSpeed = 2.2;
+        basePatience = 65;
+        baseValue = 150;
+        urgency = 1;
+        displayName = 'Idoso';
+        break;
+      case 'JOVEM':
+        baseSpeed = 3.5;
+        basePatience = 35;
+        baseValue = 100;
+        urgency = 3;
+        displayName = 'Jovem';
+        break;
+      case 'EXECUTIVO':
+        baseSpeed = 3.4;
+        basePatience = 20;
+        baseValue = 280;
+        urgency = 4;
+        displayName = 'Executivo';
+        break;
+      case 'IMPACIENTE':
+        baseSpeed = 4.0;
+        basePatience = 16;
+        baseValue = 160;
+        urgency = 5;
+        displayName = 'Impaciente';
+        break;
+      case 'VIP':
+        baseSpeed = 3.6;
+        basePatience = 28;
+        baseValue = 450;
+        urgency = 3;
+        displayName = 'VIP';
+        break;
+      default:
+        baseSpeed = 3.2;
+        basePatience = 45;
+        baseValue = 120;
+        urgency = 2;
+        displayName = 'Trabalhador';
+        break;
+    }
+
+    // Traço do Zeca: +10% de paciência dos passageiros
+    if (this.playerStats.selectedCharacter === 'ZECA') {
+      basePatience = Math.round(basePatience * 1.10);
+    }
 
     const id = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
     const startX = -18 + Math.random() * 36;
@@ -1958,14 +2147,14 @@ export class GameEngine {
 
     const passenger: Passenger = {
       id,
-      name: 'Passageiro',
-      type: pType,
+      name: displayName,
+      type: selectedProfile,
       destination: route,
-      value: pType === 'ESPECIAL' ? 500 : pType === 'APRESSADO' ? 150 : 100,
-      urgency: pType === 'APRESSADO' ? 5 : 2,
-      patience: pType === 'APRESSADO' ? 25 : 45,
-      maxPatience: pType === 'APRESSADO' ? 25 : 45,
-      speed: 4.5,
+      value: baseValue,
+      urgency,
+      patience: basePatience,
+      maxPatience: basePatience,
+      speed: baseSpeed,
       state: 'WAITING',
       position: { x: startX, y: 0.6, z: startZ },
       targetPos: { x: startX + (Math.random() - 0.5) * 4, y: 0.6, z: startZ + (Math.random() - 0.5) * 2 },
@@ -1979,12 +2168,14 @@ export class GameEngine {
 
     this.passengers.push(passenger);
 
-    // Map passenger type to real atlas sprite frame name
+    // Map passenger profile to real atlas sprite frame name
     const spriteFrameName = 
-      pType === 'APRESSADO' ? 'passenger_apressado' :
-      pType === 'INDECISO' ? 'passenger_indeciso' :
-      pType === 'OBSERVADOR' ? 'passenger_observador' :
-      pType === 'ESPECIAL' ? 'passenger_especial' :
+      selectedProfile === 'ESTUDANTE' ? 'passenger_apressado' :
+      selectedProfile === 'JOVEM' ? 'passenger_indeciso' :
+      selectedProfile === 'IDOSO' ? 'passenger_observador' :
+      selectedProfile === 'EXECUTIVO' ? 'passenger_exigente' :
+      selectedProfile === 'IMPACIENTE' ? 'passenger_correria' :
+      selectedProfile === 'VIP' ? 'passenger_especial' :
       'passenger_normal';
 
     // Acquire mesh from pool or create if empty
@@ -2018,21 +2209,23 @@ export class GameEngine {
     }
 
     this.isCalling = true;
-    this.callPulseTimer = 0.3;
+    this.callPulseTimer = 0.45;
     soundManager.playCall();
 
     // Particle effect around player
     this.spawnSpriteParticle('effect_megaphone', this.playerPos, 2.2, 1.6);
 
-    const radius = (this.isTutorial ? 8.0 : 5.0) + this.playerStats.upgradeVoice * 0.8;
+    const baseRadius = 3.5;
+    const charRadiusMult = this.playerStats.selectedCharacter === 'ZECA' ? 1.20 : 1.0;
+    const radius = (this.isTutorial ? 8.0 : baseRadius + this.playerStats.upgradeVoice * 0.7) * charRadiusMult;
 
     // Speak contextual phrase
-    const phrases = ['Viana!', 'Talatona!', 'Centro!', 'Golfe 2!', 'Cacuaco!', 'Camama!', 'Entra, entra!', 'Táxi a sair!'];
+    const phrases = ['Viana!', 'Cacuaco!', 'Kilamba!', 'Talatona!', 'Centro!', 'Golfe 2!', 'Camama!', 'Entra, entra!', 'Táxi a sair!'];
     soundManager.speakPhrase(phrases[Math.floor(Math.random() * phrases.length)]);
 
     // Find waiting passengers within radius
     this.passengers.forEach((p) => {
-      if (p.state === 'WAITING' || p.state === 'SEARCHING') {
+      if (p.state === 'WAITING' || p.state === 'SEARCHING' || p.state === 'IDLE') {
         const dist = Math.hypot(p.position.x - this.playerPos.x, p.position.z - this.playerPos.z);
         if (dist <= radius) {
           // Check destination compatibility with active taxis at the stop using canPassengerFollow
@@ -2040,20 +2233,12 @@ export class GameEngine {
 
           if (!matchResult.canFollow || !matchResult.matchingTaxi) {
             // DESTINATION INCOMPATIBLE!
-            // Passenger refuses and exhibits refusal animation & error icon
             p.refusalTimer = 1.8;
             p.refusalReason = 'SEM_TAXI';
 
-            // Visual error particle / icon over passenger head
             this.spawnSpriteParticle('effect_dispute_angry', p.position, 1.6, 2.0);
-
-            // Audio refusal feedback
             soundManager.playPassengerRefusal();
-
-            // Refusal floating toast
             this.callbacks.onFloatingText?.(`❌ ${p.destination}: Sem táxi na paragem!`, '#ef4444', p.position);
-
-            // Trigger engine callback
             this.callbacks.onPassengerRefusal?.(p, matchResult.reason || `Sem táxi para ${p.destination}`);
             return;
           }
@@ -2076,7 +2261,6 @@ export class GameEngine {
             p.assignedTaxiId = matchingTaxi.id;
             this.callbacks.onFloatingText('Acompanhando!', '#ffd700', p.position);
             soundManager.playCoin();
-            // Visual feedback on recruit
             this.spawnSpriteParticle('effect_passenger_ok', p.position, 1.4, 2.2);
             this.callbacks.onPassengerFollowed?.(p);
           }
@@ -2085,49 +2269,58 @@ export class GameEngine {
     });
   }
 
+  // Board a passenger into a matching taxi at the bay
+  public boardPassenger(p: Passenger, matchingTaxi: Taxi) {
+    if (p.state === 'BOARDING' || p.state === 'BOARDED') return;
+    if (matchingTaxi.currentPassengers >= matchingTaxi.capacity) return;
+
+    p.state = 'BOARDING';
+    p.assignedTaxiId = matchingTaxi.id;
+    matchingTaxi.currentPassengers++;
+
+    this.passengersServedCount++;
+    this.callbacks.onPassengerServedCount(this.passengersServedCount);
+
+    const eventMultiplier = this.eventManager?.getActiveEvent()?.bonusMultiplier || 1.0;
+    // Traço do Tio Bety: +25% de recompensa financeira por táxi
+    const charMultiplier = this.playerStats.selectedCharacter === 'TIO_BETY' ? 1.25 : 1.0;
+    const reward = Math.round(p.value * this.combo * eventMultiplier * charMultiplier);
+    this.matchKz += reward;
+    this.matchXp += 15;
+
+    this.callbacks.onScoreUpdate(this.matchKz, this.matchXp, this.combo);
+    this.callbacks.onFloatingText(`+${reward} Kz`, '#ffd700', matchingTaxi.position);
+    soundManager.playCoin();
+
+    // Visual feedback particles on board 💰 ✨
+    this.spawnSpriteParticle('effect_coin', matchingTaxi.position, 1.8, 2.4);
+    this.spawnSpriteParticle('effect_xp', matchingTaxi.position, 1.8, 2.8);
+
+    // Check if taxi is now full!
+    if (matchingTaxi.currentPassengers >= matchingTaxi.capacity) {
+      this.onTaxiFilled(matchingTaxi);
+    }
+
+    this.callbacks.onPassengerBoarded?.(p, matchingTaxi);
+  }
+
   // Player Trigger: Interact / Board Passenger 🤝
   public triggerInteractAction() {
-    // Find following passenger close to player
-    const followingP = this.passengers.find((p) => p.followedBy === 'PLAYER' && p.state === 'FOLLOWING');
-    if (!followingP) return;
+    const following = this.passengers.filter((p) => p.followedBy === 'PLAYER' && p.state === 'FOLLOWING');
+    if (following.length === 0) return;
 
-    // Check if player is near a matching taxi
-    const matchingTaxi = this.taxis.find(
-      (t) =>
-        t.route === followingP.destination &&
-        (t.state === 'WAITING' || t.state === 'LOADING') &&
-        t.currentPassengers < t.capacity &&
-        Math.hypot(t.position.x - this.playerPos.x, t.position.z - this.playerPos.z) <= (this.isTutorial ? 4.8 : 4.0)
-    );
+    for (const followingP of following) {
+      const matchingTaxi = this.taxis.find(
+        (t) =>
+          t.route === followingP.destination &&
+          (t.state === 'WAITING' || t.state === 'LOADING') &&
+          t.currentPassengers < t.capacity &&
+          Math.hypot(t.position.x - this.playerPos.x, t.position.z - this.playerPos.z) <= (this.isTutorial ? 5.2 : 4.4)
+      );
 
-    if (matchingTaxi) {
-      // Board passenger into taxi!
-      followingP.state = 'BOARDING';
-      followingP.assignedTaxiId = matchingTaxi.id;
-      matchingTaxi.currentPassengers++;
-
-      this.passengersServedCount++;
-      this.callbacks.onPassengerServedCount(this.passengersServedCount);
-
-      const eventMultiplier = this.eventManager?.getActiveEvent()?.bonusMultiplier || 1.0;
-      const reward = Math.round(followingP.value * this.combo * eventMultiplier);
-      this.matchKz += reward;
-      this.matchXp += 15;
-
-      this.callbacks.onScoreUpdate(this.matchKz, this.matchXp, this.combo);
-      this.callbacks.onFloatingText(`+${reward} Kz`, '#ffd700', matchingTaxi.position);
-      soundManager.playCoin();
-
-      // Visual feedback particles on board 💰 ✨
-      this.spawnSpriteParticle('effect_coin', matchingTaxi.position, 1.8, 2.4);
-      this.spawnSpriteParticle('effect_xp', matchingTaxi.position, 1.8, 2.8);
-
-      // Check if taxi is now full!
-      if (matchingTaxi.currentPassengers >= matchingTaxi.capacity) {
-        this.onTaxiFilled(matchingTaxi);
+      if (matchingTaxi) {
+        this.boardPassenger(followingP, matchingTaxi);
       }
-
-      this.callbacks.onPassengerBoarded?.(followingP, matchingTaxi);
     }
   }
 
@@ -2326,10 +2519,22 @@ export class GameEngine {
   }
 
   private updatePlayer(delta: number) {
-    // Stamina drain / recovery
-    if (this.isRunning) {
+    // Stamina drain / recovery with 15% lockout rule
+    const minStaminaForSprint = this.maxStamina * 0.15;
+    if (this.stamina < minStaminaForSprint) {
+      this.isStaminaExhausted = true;
+      this.isRunning = false;
+    } else if (this.isStaminaExhausted && this.stamina >= minStaminaForSprint) {
+      this.isStaminaExhausted = false;
+    }
+
+    if (this.isRunning && !this.isStaminaExhausted) {
       this.stamina = Math.max(0, this.stamina - this.staminaDrainRate * delta);
-      if (this.stamina <= 0) this.isRunning = false;
+      if (this.stamina <= 0) {
+        this.stamina = 0;
+        this.isRunning = false;
+        this.isStaminaExhausted = true;
+      }
     } else {
       this.stamina = Math.min(this.maxStamina, this.stamina + this.staminaRecoveryRate * delta);
     }
@@ -2386,6 +2591,25 @@ export class GameEngine {
     // Clamp player within map boundaries
     this.playerPos.x = Math.max(-26, Math.min(26, this.playerPos.x));
     this.playerPos.z = Math.max(-2, Math.min(11, this.playerPos.z));
+
+    // Collision with parked taxis (physical bounding boxes)
+    this.taxis.forEach((taxi) => {
+      if (taxi.state === 'WAITING' || taxi.state === 'LOADING' || taxi.state === 'FULL') {
+        const halfWidth = 2.4;
+        const halfDepth = 1.35;
+        const dx = this.playerPos.x - taxi.position.x;
+        const dz = this.playerPos.z - taxi.position.z;
+        if (Math.abs(dx) < halfWidth && Math.abs(dz) < halfDepth) {
+          const overlapZ = halfDepth - Math.abs(dz);
+          const overlapX = halfWidth - Math.abs(dx);
+          if (overlapZ < overlapX) {
+            this.playerPos.z = taxi.position.z + (dz >= 0 ? halfDepth : -halfDepth);
+          } else {
+            this.playerPos.x = taxi.position.x + (dx >= 0 ? halfWidth : -halfWidth);
+          }
+        }
+      }
+    });
 
     const actualDx = this.playerPos.x - oldX;
     const actualDz = this.playerPos.z - oldZ;
@@ -2577,13 +2801,17 @@ export class GameEngine {
     this.playerRingMesh.position.set(this.playerPos.x, 0.42, this.playerPos.z);
     this.callRadiusMesh.position.set(this.playerPos.x, 0.43, this.playerPos.z);
 
-    // Call pulse visual
+    // Call pulse visual: concentric expanding vocal sound wave
     if (this.callPulseTimer > 0) {
       this.callPulseTimer -= delta;
-      const opacity = Math.max(0, this.callPulseTimer / 0.3);
-      (this.callRadiusMesh.material as THREE.MeshBasicMaterial).opacity = opacity * 0.5;
+      const progress = Math.max(0, Math.min(1, 1 - this.callPulseTimer / 0.45));
+      const opacity = Math.max(0, this.callPulseTimer / 0.45);
+      const scale = THREE.MathUtils.lerp(0.2, 1.0, Math.sqrt(progress));
+      this.callRadiusMesh.scale.set(scale, scale, scale);
+      (this.callRadiusMesh.material as THREE.MeshBasicMaterial).opacity = opacity * 0.65;
       if (this.callPulseTimer <= 0) {
         this.isCalling = false;
+        (this.callRadiusMesh.material as THREE.MeshBasicMaterial).opacity = 0;
       }
     }
   }
@@ -2859,9 +3087,31 @@ export class GameEngine {
         targetVelX = 0;
         targetVelZ = 0;
       } else {
+        // Periodic Rival Vocal Call ("Viana aqui!", "Entra já!")
+        (npc as any).shoutTimer = ((npc as any).shoutTimer || 0) + delta;
+        if ((npc as any).shoutTimer > 8.0) {
+          (npc as any).shoutTimer = 0;
+          const rivalPhrases = ['Viana aqui!', 'Cacuaco tá a sair!', 'Entra já!', 'É MEU!', 'Vem cá cliente!'];
+          const phrase = rivalPhrases[Math.floor(Math.random() * rivalPhrases.length)];
+          this.callbacks.onFloatingText?.(`${npc.name}: "${phrase}"`, npc.color || '#ba1a1a', npc.position);
+          this.spawnSpriteParticle('effect_megaphone', npc.position, 1.8, 1.5);
+        }
+
+        // Proactive Poaching: Rivals contest passengers followed by the player
+        if (!this.activeDispute && (!npc.disputeCooldown || npc.disputeCooldown <= 0) && !npc.followingPassengerId) {
+          const followedByPlayer = this.passengers.find(
+            (p) => p.followedBy === 'PLAYER' && p.state === 'FOLLOWING' &&
+            Math.hypot(p.position.x - npc.position.x, p.position.z - npc.position.z) <= 2.8
+          );
+          if (followedByPlayer) {
+            this.startDispute(followedByPlayer, npc);
+            return;
+          }
+        }
+
         // AI Logic: Find nearest unserviced passenger
         if (!npc.targetPassengerId) {
-          const target = this.passengers.find((p) => p.state === 'WAITING' || p.state === 'SEARCHING');
+          const target = this.passengers.find((p) => p.state === 'WAITING' || p.state === 'SEARCHING' || p.state === 'IDLE');
           if (target) {
             npc.targetPassengerId = target.id;
             npc.state = 'CHASING';
@@ -3012,19 +3262,19 @@ export class GameEngine {
       )) as THREE.Mesh;
 
       const pTypeKey = 
-        p.type === 'APRESSADO' ? 'passenger_apressado' :
-        p.type === 'INDECISO' ? 'passenger_indeciso' :
-        p.type === 'OBSERVADOR' ? 'passenger_observador' :
-        p.type === 'EXIGENTE' ? 'passenger_exigente' :
-        p.type === 'CORRERIA' ? 'passenger_correria' :
-        p.type === 'ESPECIAL' ? 'passenger_especial' :
+        p.type === 'APRESSADO' || p.type === 'ESTUDANTE' ? 'passenger_apressado' :
+        p.type === 'INDECISO' || p.type === 'JOVEM' ? 'passenger_indeciso' :
+        p.type === 'OBSERVADOR' || p.type === 'IDOSO' ? 'passenger_observador' :
+        p.type === 'EXIGENTE' || p.type === 'EXECUTIVO' ? 'passenger_exigente' :
+        p.type === 'CORRERIA' || p.type === 'IMPACIENTE' ? 'passenger_correria' :
+        p.type === 'ESPECIAL' || p.type === 'VIP' ? 'passenger_especial' :
         'passenger_normal';
 
       let targetVelX = 0;
       let targetVelZ = 0;
 
       // Patience timer (disabled in tutorial so learning player is never rushed)
-      if (!this.isTutorial && (p.state === 'WAITING' || p.state === 'SEARCHING')) {
+      if (!this.isTutorial && (p.state === 'WAITING' || p.state === 'SEARCHING' || p.state === 'IDLE')) {
         p.patience -= delta;
         if (p.patience <= 0) {
           // Passenger leaves in frustration ⌛
@@ -3036,6 +3286,23 @@ export class GameEngine {
 
       // Following state
       if (p.state === 'FOLLOWING') {
+        // Auto-board when reaching within 2.25 units of matching taxi bay
+        if (p.followedBy === 'PLAYER') {
+          const matchingTaxi = this.taxis.find(
+            (t) =>
+              t.route === p.destination &&
+              (t.state === 'WAITING' || t.state === 'LOADING') &&
+              t.currentPassengers < t.capacity
+          );
+          if (matchingTaxi) {
+            const distToTaxi = Math.hypot(p.position.x - matchingTaxi.position.x, p.position.z - matchingTaxi.position.z);
+            if (distToTaxi <= 2.25) {
+              this.boardPassenger(p, matchingTaxi);
+              continue;
+            }
+          }
+        }
+
         let leaderX = this.playerPos.x;
         let leaderZ = this.playerPos.z;
         if (p.followedBy !== 'PLAYER') {

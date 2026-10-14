@@ -1,6 +1,7 @@
 /**
- * LOTADOR — Tela de Fim de Jogo / Derrota (GameOverScreen)
- * Apresentação quando o turno expira sem cumprimento dos objetivos
+ * LOTADOR — Tela de Fim de Jogo / Tempo Esgotado (GameOverScreen)
+ * Apresentação quando o turno expira sem cumprimento dos objetivos.
+ * Exibe lista de objetivos com status claro e nota discreta para subir de nível.
  */
 
 import React, { useEffect } from 'react';
@@ -56,19 +57,58 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
             <span>OBJETIVO DA PARAGEM NÃO ATINGIDO</span>
           </p>
           <p className="font-work text-xs text-[#410002] leading-relaxed">
-            {results.failReason || 'O cronómetro de turno chegou a zero antes de lotares as carrinhas solicitadas para esta rota.'}
+            {results.failReason || 'O cronómetro de turno chegou a zero antes de atingires todas as metas desta fase.'}
           </p>
-          <div className="mt-2.5 pt-2 border-t border-[#ba1a1a]/20">
-            <p className="font-work text-[11px] text-[#93000a] font-medium leading-snug">
-              💡 <strong>Conselho do Manuel Veterano:</strong> Usa o botão <strong>CHAMAR [E]</strong> perto de grupos de clientes e corre com <strong>[SHIFT]</strong> para não perderes passageiros para os concorrentes!
-            </p>
-          </div>
         </div>
 
-        {/* Match Statistics Card (Retention: player keeps earnings) */}
+        {/* Lista de Objetivos e o que ficou pendente */}
+        {results.objectivesSummary && results.objectivesSummary.length > 0 && (
+          <div className="w-full bg-[#f8f9ff] border-2 border-slate-200 rounded-2xl p-3 flex flex-col gap-2 text-left mb-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+              <span className="font-space text-[11px] font-black uppercase text-slate-600 tracking-wider">
+                Progresso dos Objetivos
+              </span>
+              <span className="font-space text-[10px] font-bold text-slate-500">
+                {results.missionsDone ?? results.objectivesSummary.filter((o) => o.completed).length} / {results.missionsTotal ?? results.objectivesSummary.length}
+              </span>
+            </div>
+
+            {results.objectivesSummary.map((obj, idx) => (
+              <div key={idx} className="flex items-center justify-between text-xs font-space gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`text-sm ${obj.completed ? 'text-emerald-600' : 'text-rose-500'}`}>
+                    {obj.completed ? '✓' : '✗'}
+                  </span>
+                  <span className={`truncate ${obj.completed ? 'font-bold text-slate-800' : 'text-slate-600'}`}>
+                    {obj.description}
+                  </span>
+                </div>
+                <span
+                  className={`font-black text-[10px] px-2 py-0.5 rounded-full shrink-0 uppercase border ${
+                    obj.completed
+                      ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      : 'bg-rose-100 text-rose-800 border-rose-300'
+                  }`}
+                >
+                  {obj.completed ? 'CONCLUÍDO' : 'PENDENTE'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Nota discreta obrigatória para o jogador */}
+        <div className="w-full bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 mb-3 text-left flex items-center gap-2">
+          <span className="text-base text-amber-600">💡</span>
+          <p className="font-space text-[11px] font-bold text-amber-900 leading-snug">
+            Cumpre todos os objetivos para subir de nível.
+          </p>
+        </div>
+
+        {/* Produção no turno (O jogador mantém o faturamento e XP adquiridos) */}
         <div className="w-full bg-[#f1f3ff] rounded-2xl p-3.5 border-2 border-[#161c28] mb-4 flex flex-col gap-2">
           <div className="text-left font-space text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
-            Produção no Turno
+            Produção Conservada no Turno
           </div>
 
           <div className="flex justify-between items-center font-space text-xs md:text-sm">
@@ -89,11 +129,17 @@ export const GameOverScreen: React.FC<GameOverScreenProps> = ({
               +{results.earnedMoney.toLocaleString()} Kz
             </span>
           </div>
+
+          <div className="flex justify-between items-center font-space text-xs md:text-sm">
+            <span className="text-slate-700 font-bold">XP Acumulado:</span>
+            <span className="font-space font-bold text-sm text-[#705e00]">
+              +{results.earnedXp} XP
+            </span>
+          </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* Botões de Ação */}
         <div className="flex flex-col gap-2.5 w-full">
-          {/* Primary Action Button (Retry) */}
           <button
             onClick={() => {
               soundManager.playClick();

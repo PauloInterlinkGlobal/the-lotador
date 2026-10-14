@@ -152,3 +152,60 @@ body {
     touch-action: none !important;
   }
 }
+
+/* Level Up & CSS Confetti Celebrations */
+@keyframes levelUpEntrance {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.level-up-entrance {
+  animation: levelUpEntrance 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes pulseGoldGlow {
+  0%, 100% {
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.45), 0 4px 0 #161c28;
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(255, 215, 0, 0.9), 0 4px 0 #161c28;
+  }
+}
+
+.level-up-glow {
+  animation: pulseGoldGlow 1.6s ease-in-out infinite;
+}
+
+@keyframes confettiFall {
+  0% {
+    transform: translateY(-20px) rotate(0deg) scale(0.7);
+    opacity: 1;
+  }
+  85% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(115vh) rotate(720deg) scale(1);
+    opacity: 0;
+  }
+}
+
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  border-radius: 2px;
+  animation: confettiFall 3s linear forwards;
+  pointer-events: none;
+  z-index: 60;
+}
+

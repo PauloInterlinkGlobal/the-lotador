@@ -147,10 +147,79 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
           </div>
         </div>
 
-        {/* Gender / Character Selection */}
+        {/* Personagens Selecionáveis de Luanda com Traits */}
+        <div className="w-full mb-3">
+          <span className="font-space font-bold text-xs text-slate-700 block mb-1.5 uppercase flex items-center justify-between">
+            <span>Lotador Ativo & Habilidade:</span>
+            <span className="text-[10px] text-[#006399] font-black">ESCOLHE O TEU ESTILO</span>
+          </span>
+          <div className="grid grid-cols-3 gap-2">
+            {/* Kito */}
+            <button
+              onClick={() => {
+                soundManager.playClick();
+                const updated = { ...stats, selectedCharacter: 'KITO' as const };
+                savePlayerStats(updated);
+                onUpdateStats(updated);
+              }}
+              className={`py-2 px-2 rounded-xl border-2 border-[#161c28] flex flex-col items-center justify-center gap-1 transition-all text-center ${
+                (stats.selectedCharacter || 'KITO') === 'KITO' ? 'bg-[#ffd700] hard-shadow-sm ring-2 ring-[#fe6b00]' : 'bg-slate-100 hover:bg-slate-200'
+              }`}
+            >
+              <div className="w-7 h-7 rounded-full bg-[#ba1a1a] flex items-center justify-center text-white text-[10px] font-black font-anybody">
+                ⚡
+              </div>
+              <span className="font-space font-black text-[11px] leading-tight text-[#161c28]">KITO</span>
+              <span className="text-[8px] font-bold text-[#ba1a1a] leading-none">+10% Vel.</span>
+              <span className="text-[8px] text-slate-500 leading-none">-10% Estam.</span>
+            </button>
+
+            {/* Zeca */}
+            <button
+              onClick={() => {
+                soundManager.playCall();
+                const updated = { ...stats, selectedCharacter: 'ZECA' as const };
+                savePlayerStats(updated);
+                onUpdateStats(updated);
+              }}
+              className={`py-2 px-2 rounded-xl border-2 border-[#161c28] flex flex-col items-center justify-center gap-1 transition-all text-center ${
+                stats.selectedCharacter === 'ZECA' ? 'bg-[#ffd700] hard-shadow-sm ring-2 ring-[#fe6b00]' : 'bg-slate-100 hover:bg-slate-200'
+              }`}
+            >
+              <div className="w-7 h-7 rounded-full bg-[#006399] flex items-center justify-center text-white text-[10px] font-black font-anybody">
+                📢
+              </div>
+              <span className="font-space font-black text-[11px] leading-tight text-[#161c28]">ZECA</span>
+              <span className="text-[8px] font-bold text-[#006399] leading-none">+20% Voz</span>
+              <span className="text-[8px] text-emerald-700 leading-none">+10% Paciência</span>
+            </button>
+
+            {/* Tio Bety */}
+            <button
+              onClick={() => {
+                soundManager.playCoin();
+                const updated = { ...stats, selectedCharacter: 'TIO_BETY' as const };
+                savePlayerStats(updated);
+                onUpdateStats(updated);
+              }}
+              className={`py-2 px-2 rounded-xl border-2 border-[#161c28] flex flex-col items-center justify-center gap-1 transition-all text-center ${
+                stats.selectedCharacter === 'TIO_BETY' ? 'bg-[#ffd700] hard-shadow-sm ring-2 ring-[#fe6b00]' : 'bg-slate-100 hover:bg-slate-200'
+              }`}
+            >
+              <div className="w-7 h-7 rounded-full bg-[#2e7d32] flex items-center justify-center text-white text-[10px] font-black font-anybody">
+                💰
+              </div>
+              <span className="font-space font-black text-[11px] leading-tight text-[#161c28]">TIO BETY</span>
+              <span className="text-[8px] font-bold text-[#2e7d32] leading-none">+25% Kz</span>
+              <span className="text-[8px] text-slate-500 leading-none">-5% Vel.</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Modelo do Personagem */}
         <div className="w-full mb-3">
           <span className="font-space font-bold text-xs text-slate-600 block mb-1.5 uppercase">
-            Personagem:
+            Aparência / Visual:
           </span>
           <div className="grid grid-cols-3 gap-2">
             <button

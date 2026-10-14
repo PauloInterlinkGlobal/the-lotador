@@ -156,10 +156,18 @@ export const UpgradesModal: React.FC<UpgradesModalProps> = ({
           </div>
 
           <div className="flex justify-between items-center pt-1 border-t border-slate-700 text-xs font-space">
-            <span className="text-slate-400">Saldo Disponível:</span>
-            <span className="font-bold text-base text-[#ffd700]">
-              💰 {stats.money.toLocaleString()} Kz
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">Saldo:</span>
+              <span className="font-bold text-sm text-[#ffd700]">
+                💰 {stats.money.toLocaleString()} Kz
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">Habilidades:</span>
+              <span className="font-bold text-xs bg-[#a3e635]/20 text-[#a3e635] px-2 py-0.5 rounded border border-[#a3e635]/40">
+                ⭐ {stats.skillPoints ?? 0} PTS
+              </span>
+            </div>
           </div>
         </div>
 
