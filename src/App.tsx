@@ -975,18 +975,7 @@ export default function App() {
       )}
 
       {/* Dev-Only Storage & Network Telemetry Diagnostics */}
-      <DiagnosticOverlay
-        fps={engineRef.current?.getFps() || 60}
-        entityCount={
-          engineRef.current?.getEntitiesCount() || {
-            passengers: passengers.length,
-            taxis: taxis.length,
-            particles: 0,
-          }
-        }
-        graphicsQuality={engineRef.current?.graphicsQuality || (mobileEnv.isLowEnd ? 'LOW' : 'MEDIUM')}
-        lastSavedTime={storageManager.getLastSavedTime()}
-      />
+     
     </div>
   );
 }

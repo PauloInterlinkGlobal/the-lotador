@@ -2441,38 +2441,6 @@ export class GameEngine {
     };
   }
 
-  public getDiagnostics() {
-    let jsHeapMb: number | null = null;
-    if (typeof performance !== 'undefined' && (performance as any).memory) {
-      jsHeapMb = Math.round((performance as any).memory.usedJSHeapSize / (1024 * 1024));
-    }
-
-    const currentDpr = this.renderer ? this.renderer.getPixelRatio() : 1;
-    const size = new THREE.Vector2();
-    if (this.renderer) {
-      this.renderer.getSize(size);
-    }
-
-    return {
-      fps: Math.round(this.currentFps),
-      frameTimeMs: Number(this.lastFrameDeltaMs.toFixed(1)),
-      drawCalls: this.renderer?.info?.render?.calls || 0,
-      triangles: this.renderer?.info?.render?.triangles || 0,
-      geometries: this.renderer?.info?.memory?.geometries || 0,
-      textures: this.renderer?.info?.memory?.textures || 0,
-      quality: this.graphicsQuality,
-      dpr: currentDpr,
-      resolution: `${Math.round(size.x)}x${Math.round(size.y)}`,
-      jsHeapMb,
-      entities: {
-        passengers: this.passengers.length,
-        taxis: this.taxis.length,
-        npcs: this.npcs.length,
-        obstacles: this.urbanObstacles.length,
-        particles: this.particles.length,
-      },
-    };
-  }
 
   public setGraphicsQuality(quality: 'LOW' | 'MEDIUM' | 'HIGH') {
     this.graphicsQuality = quality;
