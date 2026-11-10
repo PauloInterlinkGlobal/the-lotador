@@ -852,62 +852,36 @@ export class BuildingManager {
   public static generateUrbanProps(quality: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM'): THREE.Group[] {
     const props: THREE.Group[] = [];
 
-    // LOW quality mode: essential props only (2 lamps, 1 sign, 1 stall)
+    // Street furniture occupies a foreground strip. Shop facades begin near
+    // z=8.8, leaving a visible gap between buildings and decorative objects.
+    const propY = 0.4;
+    const propZ = 6.6;
+
     if (quality === 'LOW') {
-      [-16, 16].forEach((x) => {
-        props.push(this.createStreetLamp(x, 0.4, 9.2));
+      [-25, 25].forEach((x) => props.push(this.createStreetLamp(x, propY, propZ)));
+      props.push(this.createAngolaDirectionSign(-31, propY, 2.5));
+      props.push(this.createMulticaixaTotem(13, propY, propZ));
+      props.push(this.createStreetFruitStall(-12, propY, propZ));
+    } else {
+      // Lamps are spaced along the rear edge of the pedestrian strip.
+      [-30, -18, 18, 30].forEach((x) => {
+        props.push(this.createStreetLamp(x, propY, propZ));
       });
-      props.push(this.createAngolaDirectionSign(-24, 0.4, 2.5));
-      props.push(this.createMulticaixaTotem(15.5, 0.4, 8.6));
-      props.push(this.createStreetFruitStall(0, 0.4, 8.6));
-      
-      const shadowsOn = this.areShadowsEnabled(quality);
-      if (!shadowsOn) {
-        props.forEach((p) => {
-          p.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-              child.castShadow = false;
-              child.receiveShadow = false;
-            }
-          });
-        });
-      }
-      return props;
+
+      // Bins are kept between lamps, away from benches and shelters.
+      [-23, -8, 8, 23].forEach((x) => {
+        props.push(this.createTrashBin(x, propY, propZ));
+      });
+
+      // Direction signs occupy the outer ends of the front pedestrian band.
+      props.push(this.createAngolaDirectionSign(-32, propY, 2.5));
+      props.push(this.createAngolaDirectionSign(32, propY, 2.5));
+
+      // Commercial props use distinct slots with clear horizontal spacing.
+      props.push(this.createMulticaixaTotem(-14, propY, propZ));
+      props.push(this.createTireStack(14, propY, propZ));
+      props.push(this.createStreetFruitStall(0, propY, propZ));
     }
-
-    // 1. Street Lamp Posts (Postes de iluminação pública) along sidewalk (z = 9.2)
-    [-24, -14, -2, 10, 22].forEach((x) => {
-      const lampGroup = this.createStreetLamp(x, 0.4, 9.2);
-      props.push(lampGroup);
-    });
-
-    // 2. Trash Bins (Caixotes de lixo urbanos)
-    [-18, -6, 6, 18].forEach((x) => {
-      const bin = this.createTrashBin(x, 0.4, 8.8);
-      props.push(bin);
-    });
-
-    // 3. Directional Road Sign (Placa de Direção de Luanda)
-    const signBoard = this.createAngolaDirectionSign(-26, 0.4, 2.5);
-    props.push(signBoard);
-
-    const signBoard2 = this.createAngolaDirectionSign(26, 0.4, 2.5);
-    props.push(signBoard2);
-
-    // 4. Street Multicaixa Standalone ATM Totem (Passeio, perto da zona comercial)
-    const atmTotem = this.createMulticaixaTotem(15.5, 0.4, 8.6);
-    props.push(atmTotem);
-
-    // 5. Tire Stack for Auto Workshop (Perto da lateral esquerda)
-    const tireStack1 = this.createTireStack(-27.5, 0.4, 8.8);
-    props.push(tireStack1);
-
-    // 6. Street Market Fruit Stall / Zungueira Umbrella
-    const marketStall = this.createStreetFruitStall(-8, 0.4, 8.6);
-    props.push(marketStall);
-
-    const marketStall2 = this.createStreetFruitStall(8, 0.4, 8.6);
-    props.push(marketStall2);
 
     const shadowsOn = this.areShadowsEnabled(quality);
     if (!shadowsOn) {
