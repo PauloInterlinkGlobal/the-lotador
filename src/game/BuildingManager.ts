@@ -874,8 +874,8 @@ export class BuildingManager {
       });
 
       // Direction signs occupy the outer ends of the front pedestrian band.
-      props.push(this.createAngolaDirectionSign(-32, propY, 2.5));
-      props.push(this.createAngolaDirectionSign(32, propY, 2.5));
+      props.push(this.createAngolaDirectionSign(-29, propY, 2.5));
+      props.push(this.createAngolaDirectionSign(29, propY, 2.5));
 
       // Commercial props use distinct slots with clear horizontal spacing.
       props.push(this.createMulticaixaTotem(-14, propY, propZ));
