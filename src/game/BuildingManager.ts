@@ -859,7 +859,7 @@ export class BuildingManager {
 
     if (quality === 'LOW') {
       [-25, 25].forEach((x) => props.push(this.createStreetLamp(x, propY, propZ)));
-      props.push(this.createAngolaDirectionSign(-31, propY, 2.5));
+      props.push(this.createAngolaDirectionSign(-29, propY, 2.5));
       props.push(this.createMulticaixaTotem(13, propY, propZ));
       props.push(this.createStreetFruitStall(-12, propY, propZ));
     } else {
