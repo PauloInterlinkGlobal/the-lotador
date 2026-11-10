@@ -86,52 +86,52 @@ export const SCENERY_FRAME_DEFS: Record<SceneryObstacleType, SceneryFrameDef> = 
 export const SCENERY_PLACEMENTS: Record<string, SceneryPlacement[]> = {
   // Level 1 / Default Paragem Urbana Layout
   LEVEL_1: [
-    // 1 Abrigo de paragem (central on sidewalk, back corridor)
+    // 1 Abrigo de paragem (central on sidewalk promenade, clear of storefronts)
     {
       id: 'scenery_abrigo_1',
       type: 'abrigo_paragem',
       x: -4.0,
-      z: 7.5,
+      z: 5.2,
     },
-    // 1 Placa de paragem de táxi (near sidewalk curb edge)
+    // 1 Placa de paragem de táxi (near sidewalk curb edge, separated from trees and buildings)
     {
       id: 'scenery_placa_1',
       type: 'paragem_taxi_placa',
-      x: -14.5,
-      z: 0.5,
+      x: -16.0,
+      z: 1.0,
     },
-    // 1 Barraca de água fresca (right sidewalk commercial activity)
+    // 1 Barraca de água fresca (right sidewalk commercial area, open pedestrian corridor)
     {
       id: 'scenery_barraca_1',
       type: 'barraca_agua_fresca',
-      x: 14.5,
-      z: 5.5,
+      x: 15.0,
+      z: 4.2,
     },
-    // 2 Bancos de madeira (comfortable waiting areas)
+    // 2 Bancos de madeira (comfortable waiting areas flanking the central plaza)
     {
       id: 'scenery_banco_1',
       type: 'banco_madeira',
-      x: -9.5,
-      z: 4.5,
+      x: -10.5,
+      z: 3.6,
     },
     {
       id: 'scenery_banco_2',
       type: 'banco_madeira',
       x: 5.5,
-      z: 4.5,
+      z: 3.6,
     },
-    // 2 Árvores (lush shade on lateral sidewalks)
+    // 2 Árvores (positioned on lateral sidewalk wings, completely free of building facades)
     {
       id: 'scenery_arvore_1',
       type: 'arvore',
-      x: -19.0,
-      z: 8.5,
+      x: -22.0,
+      z: 4.8,
     },
     {
       id: 'scenery_arvore_2',
       type: 'arvore',
-      x: 19.0,
-      z: 8.5,
+      x: 22.0,
+      z: 4.8,
     },
     // 4 Cones de trânsito alinhados separando a rua das baias de táxis
     {

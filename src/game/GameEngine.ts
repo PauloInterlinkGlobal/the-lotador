@@ -2219,18 +2219,18 @@ export class GameEngine {
     const id = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
     // Zonas de espera naturais: bancos, abrigo, placa, barraca de água e meio do passeio.
     const waitingZones = [
-      { x: -9.5, z: 3.0 }, // frente do banco 1
-      { x: 5.5, z: 3.0 },  // frente do banco 2
-      { x: -4.0, z: 5.6 }, // junto ao abrigo
-      { x: -13.5, z: 2.0 }, // junto à placa
-      { x: 12.0, z: 3.6 },  // junto à barraca de água
-      { x: 0.0, z: 3.4 },   // meio do passeio
+      { x: -10.5, z: 2.6 }, // frente do banco 1
+      { x: 5.5, z: 2.6 },   // frente do banco 2
+      { x: -4.0, z: 3.8 },  // frente/junto ao abrigo
+      { x: -15.0, z: 2.0 }, // junto à placa
+      { x: 13.0, z: 3.2 },  // junto à barraca de água
+      { x: 0.0, z: 2.8 },   // meio do passeio
     ];
     const pickSpawn = () => {
       const zone = waitingZones[Math.floor(Math.random() * waitingZones.length)];
       return {
-        x: Math.max(-18, Math.min(18, zone.x + (Math.random() - 0.5) * 3.2)),
-        z: Math.max(2, Math.min(9, zone.z + (Math.random() - 0.5) * 1.8)),
+        x: Math.max(-18, Math.min(18, zone.x + (Math.random() - 0.5) * 2.8)),
+        z: Math.max(1.2, Math.min(6.2, zone.z + (Math.random() - 0.5) * 1.5)),
       };
     };
     const isSpawnOk = (x: number, z: number) =>

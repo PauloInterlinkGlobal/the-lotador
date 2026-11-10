@@ -859,7 +859,6 @@ export class BuildingManager {
       });
       props.push(this.createAngolaDirectionSign(-24, 0.4, 2.5));
       props.push(this.createMulticaixaTotem(15.5, 0.4, 8.6));
-      props.push(this.createStreetFruitStall(0, 0.4, 8.6));
       
       const shadowsOn = this.areShadowsEnabled(quality);
       if (!shadowsOn) {
@@ -901,13 +900,6 @@ export class BuildingManager {
     // 5. Tire Stack for Auto Workshop (Perto da lateral esquerda)
     const tireStack1 = this.createTireStack(-27.5, 0.4, 8.8);
     props.push(tireStack1);
-
-    // 6. Street Market Fruit Stall / Zungueira Umbrella
-    const marketStall = this.createStreetFruitStall(-8, 0.4, 8.6);
-    props.push(marketStall);
-
-    const marketStall2 = this.createStreetFruitStall(8, 0.4, 8.6);
-    props.push(marketStall2);
 
     const shadowsOn = this.areShadowsEnabled(quality);
     if (!shadowsOn) {

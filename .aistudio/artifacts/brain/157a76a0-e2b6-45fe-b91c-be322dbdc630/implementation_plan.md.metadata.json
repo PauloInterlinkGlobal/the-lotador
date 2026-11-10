@@ -1,6 +1,6 @@
 {
-  "summary": "Plano de implementação para integrar os 6 personagens fiéis à imagem de referência no jogo The Lotador e gerar a sprite sheet horizontal exportável para Godot.",
-  "updatedAt": "2026-10-18T13:21:09.276293088Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Plano arquitetural e de engenharia para reposicionar o abrigo da paragem, árvores e elementos de cenário em O Lotador, eliminando sobreposições com as fachadas das lojas e removendo adereços procedurais redundantes.",
+  "updatedAt":  "2026-11-10T18:44:52.442147236Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }
