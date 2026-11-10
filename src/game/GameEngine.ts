@@ -2152,18 +2152,30 @@ export class GameEngine {
     }
 
     const id = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-    let startX = -18 + Math.random() * 36;
-    let startZ = 2 + Math.random() * 7;
-    let attempts = 0;
-    while (
-      this.sceneryObstacleManager &&
-      !this.sceneryObstacleManager.isClearForSpawn(startX, startZ, 2.0) &&
-      attempts < 12
-    ) {
-      startX = -18 + Math.random() * 36;
-      startZ = 2 + Math.random() * 7;
-      attempts++;
+    // Spawn only inside the passenger waiting strip. Reject scenery, player and
+    // existing passenger overlaps so nobody appears inside a bench, stall or crowd.
+    let startX = 0;
+    let startZ = 4.5;
+    let validSpawn = false;
+    for (let attempts = 0; attempts < 24; attempts++) {
+      const candidateX = -19 + Math.random() * 38;
+      const candidateZ = 2.0 + Math.random() * 5.8;
+      const blockedByScenery = this.sceneryObstacleManager
+        ? !this.sceneryObstacleManager.isClearForSpawn(candidateX, candidateZ, 1.35)
+        : false;
+      const blockedByPlayer = Math.hypot(candidateX - this.playerPos.x, candidateZ - this.playerPos.z) < 1.6;
+      const blockedByPassenger = this.passengers.some(
+        (existing) => Math.hypot(candidateX - existing.position.x, candidateZ - existing.position.z) < 1.45
+      );
+      if (!blockedByScenery && !blockedByPlayer && !blockedByPassenger) {
+        startX = candidateX;
+        startZ = candidateZ;
+        validSpawn = true;
+        break;
+      }
     }
+    // Do not force an invalid spawn when the waiting area is temporarily crowded.
+    if (!validSpawn) return;
 
     const passenger: Passenger = {
       id,
@@ -3522,8 +3534,13 @@ export class GameEngine {
     // Spawn new passengers periodically (disabled in tutorial to prevent uncontrolled passenger count inflation)
     if (!this.isTutorial) {
       this.passengerSpawnTimer += delta;
-      // Faster replenishment if count drops below 4, preventing dead paragens
-      const spawnRate = this.passengers.length < 4 ? 1.5 : (this.isRushHour ? 2.5 : 5.0);
+      // Level data controls the normal cadence. A short emergency interval keeps
+      // the stop playable when the queue is nearly empty without flooding it.
+      const levelNumber = this.levelConfig?.level_number ?? this.playerStats.level ?? 1;
+      const progressionInterval = Math.max(2.4, 5.2 - Math.max(0, levelNumber - 1) * 0.16);
+      const configuredInterval = this.levelConfig?.passenger_spawn_interval_seconds ?? progressionInterval;
+      const queuePressureMultiplier = this.passengers.length < 4 ? 0.68 : this.isRushHour ? 0.82 : 1;
+      const spawnRate = Math.max(1.35, configuredInterval * queuePressureMultiplier);
       if (this.passengerSpawnTimer >= spawnRate) {
         this.passengerSpawnTimer = 0;
         this.spawnPassenger();

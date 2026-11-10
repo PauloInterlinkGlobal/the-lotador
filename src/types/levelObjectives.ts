@@ -43,6 +43,8 @@ export interface LevelData {
   fiscal_count?: number; // fiscais
   taxi_slots_count?: number; // 1, 2, or 3
   traffic_density?: 'BAIXO' | 'MEDIO' | 'ALTO';
+  /** Seconds between passenger spawns; lower values increase queue pressure. */
+  passenger_spawn_interval_seconds?: number;
   reward_kz: number;
   reward_xp?: number;
   unlocked: boolean;
