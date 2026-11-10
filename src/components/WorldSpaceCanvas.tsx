@@ -147,7 +147,7 @@ export const WorldSpaceCanvas: React.FC<WorldSpaceCanvasProps> = ({
           continue;
         }
 
-        const screenPos = engine.toScreenPosition(p.position, 1.35);
+        const screenPos = engine.toScreenPosition(p.position, 3.0);
 
         if (screenPos.visible) {
           const isRefused = !!(p.refusalTimer && p.refusalTimer > 0);

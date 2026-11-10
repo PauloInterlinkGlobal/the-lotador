@@ -84,80 +84,26 @@ export const SCENERY_FRAME_DEFS: Record<SceneryObstacleType, SceneryFrameDef> = 
  * - 4 Cones de trânsito alinhados separando a rua das baias de táxis
  */
 export const SCENERY_PLACEMENTS: Record<string, SceneryPlacement[]> = {
-  // Level 1 / Default Paragem Urbana Layout
+  // Level 1 / Default Paragem Urbana Layout (ver src/data/layout.ts para o mapa de zonas)
+  // Tudo fica com z <= 5.8 (fachadas dos prédios em z ≈ 8.75, rampas/toldos a partir de 7.3).
   LEVEL_1: [
-    // 1 Abrigo de paragem (central on sidewalk promenade, clear of storefronts)
-    {
-      id: 'scenery_abrigo_1',
-      type: 'abrigo_paragem',
-      x: -4.0,
-      z: 5.2,
-    },
-    // 1 Placa de paragem de táxi (near sidewalk curb edge, separated from trees and buildings)
-    {
-      id: 'scenery_placa_1',
-      type: 'paragem_taxi_placa',
-      x: -16.0,
-      z: 1.0,
-    },
-    // 1 Barraca de água fresca (right sidewalk commercial area, open pedestrian corridor)
-    {
-      id: 'scenery_barraca_1',
-      type: 'barraca_agua_fresca',
-      x: 15.0,
-      z: 4.2,
-    },
-    // 2 Bancos de madeira (comfortable waiting areas flanking the central plaza)
-    {
-      id: 'scenery_banco_1',
-      type: 'banco_madeira',
-      x: -10.5,
-      z: 3.6,
-    },
-    {
-      id: 'scenery_banco_2',
-      type: 'banco_madeira',
-      x: 5.5,
-      z: 3.6,
-    },
-    // 2 Árvores (positioned on lateral sidewalk wings, completely free of building facades)
-    {
-      id: 'scenery_arvore_1',
-      type: 'arvore',
-      x: -22.0,
-      z: 4.8,
-    },
-    {
-      id: 'scenery_arvore_2',
-      type: 'arvore',
-      x: 22.0,
-      z: 4.8,
-    },
+    // Abrigo da paragem: fila do mobiliário, afastado da loja de trás
+    { id: 'scenery_abrigo_1', type: 'abrigo_paragem', x: -4.0, z: 5.0, scale: 0.8 },
+    // Placa de paragem junto ao lancil
+    { id: 'scenery_placa_1', type: 'paragem_taxi_placa', x: -13.5, z: 0.6, scale: 0.8 },
+    // Barraca de água fresca
+    { id: 'scenery_barraca_1', type: 'barraca_agua_fresca', x: 13.0, z: 4.4, scale: 0.8 },
+    // 2 Bancos de madeira
+    { id: 'scenery_banco_1', type: 'banco_madeira', x: -9.5, z: 4.5 },
+    { id: 'scenery_banco_2', type: 'banco_madeira', x: 5.5, z: 4.5 },
+    // 2 Árvores nas laterais do passeio (antes z=8.5: dentro das lojas)
+    { id: 'scenery_arvore_1', type: 'arvore', x: -20.5, z: 5.0, scale: 0.75 },
+    { id: 'scenery_arvore_2', type: 'arvore', x: 20.5, z: 5.0, scale: 0.75 },
     // 4 Cones de trânsito alinhados separando a rua das baias de táxis
-    {
-      id: 'scenery_cone_1',
-      type: 'cone_transito',
-      x: -13.5,
-      z: -1.9,
-    },
-    {
-      id: 'scenery_cone_2',
-      type: 'cone_transito',
-      x: -4.5,
-      z: -1.9,
-    },
-    {
-      id: 'scenery_cone_3',
-      type: 'cone_transito',
-      x: 4.5,
-      z: -1.9,
-    },
-    {
-      id: 'scenery_cone_4',
-      type: 'cone_transito',
-      x: 13.5,
-      z: -1.9,
-    },
+    { id: 'scenery_cone_1', type: 'cone_transito', x: -13.5, z: -1.9 },
+    { id: 'scenery_cone_2', type: 'cone_transito', x: -4.5, z: -1.9 },
+    { id: 'scenery_cone_3', type: 'cone_transito', x: 4.5, z: -1.9 },
+    { id: 'scenery_cone_4', type: 'cone_transito', x: 13.5, z: -1.9 },
   ],
 
   // Fallback / Zone aliases

@@ -28,6 +28,7 @@ import { ParagemEventManager } from './ParagemEventManager';
 import { ParagemEvent } from '../types/events';
 import { canPassengerFollow } from '../utils/gameLogic';
 import { SceneryObstacleManager } from './SceneryObstacleManager';
+import { LAYOUT } from '../data/layout';
 import { sceneryAtlasManager } from '../utils/sceneryAtlas';
 
 /** Altura (em unidades do mundo) dos passageiros. A largura vem do aspecto real do frame. */
@@ -1114,7 +1115,7 @@ export class GameEngine {
           spriteKey: 'npc_kito',
           color: 0x0288d1,
           pants: 0x3e2723,
-          pos: new THREE.Vector3(12, 0.6, 7),
+          pos: new THREE.Vector3(12, 0.6, 6.0),
           speed: (this.levelConfig.rival_speed || 7.0) * 1.05,
           specialty: 'PERSUASAO' as const,
         },
@@ -1277,8 +1278,8 @@ export class GameEngine {
           spriteKey: 'obstacle_zungueira',
           speed: 1.8,
           patrol: [
-            { x: -20, z: 5.0 },
-            { x: 20, z: 5.0 },
+            { x: -20, z: LAYOUT.LANE_FRONT_Z },
+            { x: 20, z: LAYOUT.LANE_FRONT_Z },
           ],
         };
         const mesh = this.createStylizedCharacter(0, 0, false, def.spriteKey);
@@ -1310,8 +1311,8 @@ export class GameEngine {
           spriteKey: 'obstacle_zungueira',
           speed: 2.2,
           patrol: [
-            { x: 18, z: 7.2 },
-            { x: -18, z: 6.6 },
+            { x: 18, z: LAYOUT.LANE_BACK_Z },
+            { x: -18, z: LAYOUT.LANE_BACK_Z },
           ],
         };
         const mesh = this.createStylizedCharacter(0, 0, false, def.spriteKey);
@@ -1376,8 +1377,8 @@ export class GameEngine {
           spriteKey: 'obstacle_fiscal',
           speed: 1.9,
           patrol: [
-            { x: 10, z: 8.5 },
-            { x: -10, z: 8.5 },
+            { x: 10, z: LAYOUT.LANE_BACK_Z },
+            { x: -10, z: LAYOUT.LANE_BACK_Z },
           ],
         };
         const mesh = this.createStylizedCharacter(0, 0, false, def.spriteKey);
@@ -1416,8 +1417,8 @@ export class GameEngine {
         spriteKey: 'obstacle_zungueira',
         speed: 1.8,
         patrol: [
-          { x: -20, z: 5.0 },
-          { x: 20, z: 5.0 },
+          { x: -20, z: LAYOUT.LANE_FRONT_Z },
+          { x: 20, z: LAYOUT.LANE_FRONT_Z },
         ],
       };
       const mesh = this.createStylizedCharacter(0, 0, false, def.spriteKey);
@@ -1452,8 +1453,8 @@ export class GameEngine {
           spriteKey: 'obstacle_zungueira',
           speed: 2.0,
           patrol: [
-            { x: -22, z: 4.8 },
-            { x: 22, z: 5.2 },
+            { x: -22, z: LAYOUT.LANE_FRONT_Z + 0.4 },
+            { x: 22, z: LAYOUT.LANE_FRONT_Z + 0.4 },
           ],
         },
         {
@@ -1463,8 +1464,8 @@ export class GameEngine {
           spriteKey: 'obstacle_zungueira',
           speed: 2.3,
           patrol: [
-            { x: 18, z: 7.2 },
-            { x: -18, z: 6.6 },
+            { x: 18, z: LAYOUT.LANE_BACK_Z },
+            { x: -18, z: LAYOUT.LANE_BACK_Z },
           ],
         },
       ];
@@ -1509,8 +1510,8 @@ export class GameEngine {
         spriteKey: 'obstacle_zungueira',
         speed: 2.2,
         patrol: [
-          { x: -22, z: 4.8 },
-          { x: 22, z: 5.2 },
+          { x: -22, z: LAYOUT.LANE_FRONT_Z + 0.4 },
+          { x: 22, z: LAYOUT.LANE_FRONT_Z + 0.4 },
         ],
       },
       {
@@ -1520,8 +1521,8 @@ export class GameEngine {
         spriteKey: 'obstacle_zungueira',
         speed: 2.5,
         patrol: [
-          { x: 18, z: 7.2 },
-          { x: -18, z: 6.6 },
+          { x: 18, z: LAYOUT.LANE_BACK_Z },
+          { x: -18, z: LAYOUT.LANE_BACK_Z },
         ],
       },
       {
@@ -2219,18 +2220,18 @@ export class GameEngine {
     const id = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
     // Zonas de espera naturais: bancos, abrigo, placa, barraca de água e meio do passeio.
     const waitingZones = [
-      { x: -10.5, z: 2.6 }, // frente do banco 1
-      { x: 5.5, z: 2.6 },   // frente do banco 2
-      { x: -4.0, z: 3.8 },  // frente/junto ao abrigo
-      { x: -15.0, z: 2.0 }, // junto à placa
-      { x: 13.0, z: 3.2 },  // junto à barraca de água
-      { x: 0.0, z: 2.8 },   // meio do passeio
+      { x: -9.5, z: 3.0 },  // frente do banco 1
+      { x: 5.5, z: 3.0 },   // frente do banco 2
+      { x: -4.0, z: 3.1 },  // frente do abrigo
+      { x: -13.0, z: 1.8 }, // junto à placa
+      { x: 12.0, z: 3.0 },  // frente da barraca de água
+      { x: 0.5, z: 2.8 },   // meio do passeio
     ];
     const pickSpawn = () => {
       const zone = waitingZones[Math.floor(Math.random() * waitingZones.length)];
       return {
-        x: Math.max(-18, Math.min(18, zone.x + (Math.random() - 0.5) * 2.8)),
-        z: Math.max(1.2, Math.min(6.2, zone.z + (Math.random() - 0.5) * 1.5)),
+        x: Math.max(-18, Math.min(18, zone.x + (Math.random() - 0.5) * 3.2)),
+        z: Math.max(1.6, Math.min(3.8, zone.z + (Math.random() - 0.5) * 1.6)),
       };
     };
     const isSpawnOk = (x: number, z: number) =>
@@ -2668,8 +2669,9 @@ export class GameEngine {
     this.playerPos.z += this.playerVel.z * delta;
 
     // Clamp player within map boundaries
-    this.playerPos.x = Math.max(-26, Math.min(26, this.playerPos.x));
-    this.playerPos.z = Math.max(-2, Math.min(11, this.playerPos.z));
+    this.playerPos.x = Math.max(LAYOUT.WALK_MIN_X, Math.min(LAYOUT.WALK_MAX_X, this.playerPos.x));
+    // Antes o limite era z=11: o jogador entrava dentro das lojas (fachadas em z≈8.75)
+    this.playerPos.z = Math.max(-2, Math.min(LAYOUT.WALK_MAX_Z, this.playerPos.z));
 
     // Collision with parked taxis (physical bounding boxes)
     this.taxis.forEach((taxi) => {

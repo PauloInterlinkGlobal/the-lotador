@@ -23,6 +23,7 @@
  */
 
 import * as THREE from 'three';
+import { LAYOUT } from '../data/layout';
 import { classifyDevice } from '../utils/deviceProfile';
 
 export type BuildingType =
@@ -668,21 +669,30 @@ export class BuildingManager {
     const actualEndX = quality === 'LOW' ? 22 : endX;
     const actualStepX = quality === 'LOW' ? 11.0 : stepX;
 
-    for (let x = actualStartX; x <= actualEndX; x += actualStepX) {
+    // 1.º passo: gerar os dados (a seed continua a vir do x original, para manter o visual)
+    const datas: BuildingData[] = [];
+    for (let x = actualStartX; x <= actualEndX + 0.0001; x += actualStepX) {
       const preset = presets[idx % presets.length];
       const seed = Math.abs(Math.round(x * 17.3 + idx * 43.1 + 1000));
       idx++;
 
-      const buildingData = this.applyProceduralVariations(
-        preset,
-        seed,
-        `bld_bg_${preset.type}_${Math.round(x)}`,
-        x,
-        zPos
+      datas.push(
+        this.applyProceduralVariations(preset, seed, `bld_bg_${preset.type}_${Math.round(x)}`, x, zPos)
       );
-
-      groups.push(this.createBuildingMeshGroup(buildingData, zPos, quality));
     }
+
+    // 2.º passo: com passo fixo (7.6) os prédios mais largos (até 9.0) sobrepunham-se uns aos outros.
+    // Agora cada prédio é encostado ao anterior com uma pequena rua/vão, e a fila fica centrada.
+    const GAP = 0.5;
+    const totalW = datas.reduce((acc, d) => acc + d.width, 0) + GAP * (datas.length - 1);
+    let cursor = -totalW / 2;
+    datas.forEach((d) => {
+      if (quality !== 'LOW') {
+        d.x = cursor + d.width / 2;
+        cursor += d.width + GAP;
+      }
+      groups.push(this.createBuildingMeshGroup(d, zPos, quality));
+    });
 
     return groups;
   }
@@ -701,7 +711,7 @@ export class BuildingManager {
       const bGeoL = new THREE.BoxGeometry(14, 7.5, 10);
       const bMatL = this.getWallMaterial(0x705d00);
       const meshL = new THREE.Mesh(bGeoL, bMatL);
-      meshL.position.set(-36, 3.75, 6);
+      meshL.position.set(-40, 3.75, 6);
       leftWing.add(meshL);
       groups.push(leftWing);
 
@@ -710,7 +720,7 @@ export class BuildingManager {
       const bGeoR = new THREE.BoxGeometry(14, 8.0, 10);
       const bMatR = this.getWallMaterial(0x006399);
       const meshR = new THREE.Mesh(bGeoR, bMatR);
-      meshR.position.set(36, 4.0, 6);
+      meshR.position.set(40, 4.0, 6);
       rightWing.add(meshR);
       groups.push(rightWing);
 
@@ -719,8 +729,8 @@ export class BuildingManager {
 
     // Left Street Wing (Oficina, Armazém, Cantina de Esquina, Mercado)
     const leftConfigs: { presetIdx: number; x: number; z: number; rotY: number }[] = [
-      { presetIdx: 10, x: -35, z: 10, rotY: 0 }, // Oficina
-      { presetIdx: 2, x: -42, z: 9, rotY: Math.PI / 16 }, // Armazém
+      { presetIdx: 10, x: -37, z: 10, rotY: 0 }, // Oficina
+      { presetIdx: 2, x: -46, z: 9, rotY: Math.PI / 16 }, // Armazém
       { presetIdx: 0, x: -34, z: 2, rotY: Math.PI / 8 }, // Cantina
       { presetIdx: 13, x: -41, z: 1, rotY: Math.PI / 8 }, // Mercado de rua
     ];
@@ -741,8 +751,8 @@ export class BuildingManager {
 
     // Right Street Wing (Multicaixa, Farmácia 24h, Barbearia, Padaria, Loja Telemóveis)
     const rightConfigs: { presetIdx: number; x: number; z: number; rotY: number }[] = [
-      { presetIdx: 8, x: 35, z: 10, rotY: 0 }, // Multicaixa
-      { presetIdx: 7, x: 42, z: 9, rotY: -Math.PI / 16 }, // Farmácia
+      { presetIdx: 8, x: 37, z: 10, rotY: 0 }, // Multicaixa
+      { presetIdx: 7, x: 44.5, z: 9, rotY: -Math.PI / 16 }, // Farmácia
       { presetIdx: 12, x: 34, z: 2, rotY: -Math.PI / 8 }, // Barbearia
       { presetIdx: 11, x: 41, z: 1, rotY: -Math.PI / 8 }, // Loja Telemóveis
     ];
@@ -851,15 +861,19 @@ export class BuildingManager {
    */
   public static generateUrbanProps(quality: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM'): THREE.Group[] {
     const props: THREE.Group[] = [];
+    // Props decorativos ficam à frente da rampa/toldos (z=7.0). Antes estavam em z 8.6–9.2,
+    // ou seja, DENTRO das fachadas (z ≈ 8.75–9.25). Ver src/data/layout.ts.
+    const PZ = LAYOUT.PROP_Z;
 
     // LOW quality mode: essential props only (2 lamps, 1 sign, 1 stall)
     if (quality === 'LOW') {
       [-16, 16].forEach((x) => {
-        props.push(this.createStreetLamp(x, 0.4, 9.2));
+        props.push(this.createStreetLamp(x, 0.4, PZ));
       });
       props.push(this.createAngolaDirectionSign(-24, 0.4, 2.5));
-      props.push(this.createMulticaixaTotem(15.5, 0.4, 8.6));
-      
+      props.push(this.createMulticaixaTotem(17.8, 0.4, PZ));
+      props.push(this.createStreetFruitStall(-23, 0.4, PZ));
+
       const shadowsOn = this.areShadowsEnabled(quality);
       if (!shadowsOn) {
         props.forEach((p) => {
@@ -874,32 +888,29 @@ export class BuildingManager {
       return props;
     }
 
-    // 1. Street Lamp Posts (Postes de iluminação pública) along sidewalk (z = 9.2)
-    [-24, -14, -2, 10, 22].forEach((x) => {
-      const lampGroup = this.createStreetLamp(x, 0.4, 9.2);
-      props.push(lampGroup);
+    // 1. Candeeiros: em vãos livres entre o mobiliário (abrigo, bancos, barraca)
+    [-24, -12, 1.5, 9, 24].forEach((x) => {
+      props.push(this.createStreetLamp(x, 0.4, PZ));
     });
 
-    // 2. Trash Bins (Caixotes de lixo urbanos)
-    [-18, -6, 6, 18].forEach((x) => {
-      const bin = this.createTrashBin(x, 0.4, 8.8);
-      props.push(bin);
+    // 2. Caixotes do lixo
+    [-18, 7.5, 16.5].forEach((x) => {
+      props.push(this.createTrashBin(x, 0.4, PZ));
     });
 
-    // 3. Directional Road Sign (Placa de Direção de Luanda)
-    const signBoard = this.createAngolaDirectionSign(-26, 0.4, 2.5);
-    props.push(signBoard);
+    // 3. Placas de direção (nas laterais, junto ao lancil)
+    props.push(this.createAngolaDirectionSign(-26, 0.4, 2.5));
+    props.push(this.createAngolaDirectionSign(26, 0.4, 2.5));
 
-    const signBoard2 = this.createAngolaDirectionSign(26, 0.4, 2.5);
-    props.push(signBoard2);
+    // 4. ATM Multicaixa (longe da barraca de água)
+    props.push(this.createMulticaixaTotem(17.8, 0.4, PZ));
 
-    // 4. Street Multicaixa Standalone ATM Totem (Passeio, perto da zona comercial)
-    const atmTotem = this.createMulticaixaTotem(15.5, 0.4, 8.6);
-    props.push(atmTotem);
+    // 5. Pilha de pneus da oficina
+    props.push(this.createTireStack(-27.5, 0.4, PZ));
 
-    // 5. Tire Stack for Auto Workshop (Perto da lateral esquerda)
-    const tireStack1 = this.createTireStack(-27.5, 0.4, 8.8);
-    props.push(tireStack1);
+    // 6. Bancas de fruta / guarda-sol da zungueira (nas pontas, sem tapar abrigo/bancos)
+    props.push(this.createStreetFruitStall(-23, 0.4, PZ));
+    props.push(this.createStreetFruitStall(23.5, 0.4, PZ));
 
     const shadowsOn = this.areShadowsEnabled(quality);
     if (!shadowsOn) {
