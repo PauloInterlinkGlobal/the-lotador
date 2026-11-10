@@ -9,7 +9,9 @@ const STATIC_ASSETS = [
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
   '/icons/icon-maskable-512x512.png',
-  '/icons/apple-touch-icon.png'
+  '/icons/apple-touch-icon.png',
+  '/assets/images/objetos-obstaculos.png',
+  '/objetos-obstaculos.png'
 ];
 
 // Install event - Pre-cache core application shell

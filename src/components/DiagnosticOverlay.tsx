@@ -12,7 +12,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { getStorageHealth } from '../services/storageService';
-import { Activity, Cpu, Wifi, WifiOff, HardDrive, Layers, X } from 'lucide-react';
+import { sceneryAtlasManager, SceneryAtlasStatus, FrameValidationResult } from '../utils/sceneryAtlas';
+import { GameEngine } from '../game/GameEngine';
+import { Activity, Cpu, Wifi, WifiOff, HardDrive, Layers, X, Box, ShieldCheck, AlertTriangle } from 'lucide-react';
 
 interface DiagnosticOverlayProps {
   fps?: number;
@@ -23,6 +25,7 @@ interface DiagnosticOverlayProps {
   };
   graphicsQuality?: string;
   lastSavedTime?: string;
+  engine?: GameEngine | null;
 }
 
 export const DiagnosticOverlay: React.FC<DiagnosticOverlayProps> = ({
@@ -30,6 +33,7 @@ export const DiagnosticOverlay: React.FC<DiagnosticOverlayProps> = ({
   entityCount = { passengers: 0, taxis: 0, particles: 0 },
   graphicsQuality = 'MEDIUM',
   lastSavedTime = 'N/A',
+  engine = null,
 }) => {
   // Never render in production
   if (!import.meta.env.DEV) {
@@ -39,6 +43,10 @@ export const DiagnosticOverlay: React.FC<DiagnosticOverlayProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [memoryMB, setMemoryMB] = useState<number | null>(null);
+  const [showColliders, setShowColliders] = useState(false);
+  const [sceneryStatus, setSceneryStatus] = useState<SceneryAtlasStatus>(() =>
+    sceneryAtlasManager.getDiagnosticInfo()
+  );
   const [storageInfo, setStorageInfo] = useState<{
     isNative: boolean;
     persisted: boolean;
@@ -60,6 +68,10 @@ export const DiagnosticOverlay: React.FC<DiagnosticOverlayProps> = ({
         setMemoryMB(Math.round(mem.usedJSHeapSize / (1024 * 1024)));
       }
 
+      setSceneryStatus(sceneryAtlasManager.getDiagnosticInfo());
+      if (engine) {
+        setShowColliders(engine.getSceneryCollidersDebug());
+      }
       getStorageHealth().then(setStorageInfo).catch(() => {});
     }, 1500);
 
@@ -68,7 +80,14 @@ export const DiagnosticOverlay: React.FC<DiagnosticOverlayProps> = ({
       window.removeEventListener('offline', handleOffline);
       clearInterval(interval);
     };
-  }, []);
+  }, [engine]);
+
+  const handleToggleColliders = () => {
+    if (engine) {
+      const active = engine.toggleSceneryCollidersDebug();
+      setShowColliders(active);
+    }
+  };
 
   if (!isOpen) {
     return (
@@ -87,7 +106,7 @@ export const DiagnosticOverlay: React.FC<DiagnosticOverlayProps> = ({
   return (
     <div
       id="dev-diag-panel"
-      className="fixed bottom-2 left-2 z-[9999] bg-[#0c1322]/95 border border-[#3b4758] text-white rounded-lg p-3 shadow-2xl backdrop-blur max-w-xs font-mono text-[11px] leading-tight space-y-2 pointer-events-auto"
+      className="fixed bottom-2 left-2 z-[9999] bg-[#0c1322]/95 border border-[#3b4758] text-white rounded-lg p-3 shadow-2xl backdrop-blur max-w-sm font-mono text-[11px] leading-tight space-y-2 pointer-events-auto max-h-[88vh] overflow-y-auto"
     >
       <div className="flex items-center justify-between border-b border-[#253041] pb-1.5">
         <div className="flex items-center gap-1.5 font-bold text-[#fe6b00]">
@@ -146,6 +165,71 @@ export const DiagnosticOverlay: React.FC<DiagnosticOverlayProps> = ({
         </div>
       </div>
 
+      {/* Scenery & Obstacles Diagnostic Section */}
+      <div className="bg-[#121c2d] border border-[#22334d] p-2 rounded space-y-1.5 text-[10px]">
+        <div className="flex items-center justify-between font-bold">
+          <span className="text-[#fe6b00] flex items-center gap-1">
+            <Box size={12} /> OBSTÁCULOS & CENÁRIO
+          </span>
+          <span
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] ${
+              sceneryStatus.valid
+                ? 'bg-[#00e676]/20 text-[#00e676]'
+                : 'bg-[#ff5252]/20 text-[#ff5252]'
+            }`}
+          >
+            {sceneryStatus.valid ? (
+              <>
+                <ShieldCheck size={10} /> 6 SPRITES OK
+              </>
+            ) : (
+              <>
+                <AlertTriangle size={10} /> {sceneryStatus.errorCount} ERROS
+              </>
+            )}
+          </span>
+        </div>
+
+        {/* Errors Log if any */}
+        {sceneryStatus.errors.length > 0 && (
+          <div className="bg-red-950/60 border border-red-500/40 p-1.5 rounded text-red-200 text-[9px] space-y-0.5">
+            {sceneryStatus.errors.map((err, i) => (
+              <div key={i}>⚠️ {err}</div>
+            ))}
+          </div>
+        )}
+
+        {/* Frames details list */}
+        <div className="grid grid-cols-2 gap-1 text-[9px] text-gray-300">
+          {(Object.entries(sceneryStatus.frames) as [string, FrameValidationResult][]).map(([key, f]) => (
+            <div key={key} className="bg-[#19273c] p-1 rounded flex justify-between">
+              <span className="truncate max-w-[85px]">{key.replace('paragem_taxi_', '').replace('_paragem', '')}:</span>
+              <span className={f.valid ? 'text-[#00e676] font-mono' : 'text-[#ff5252] font-mono'}>
+                {f.alphaPixels} px
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* 3D Collider Toggle Button */}
+        {engine && (
+          <button
+            onClick={handleToggleColliders}
+            className={`w-full mt-1 py-1 px-2 rounded font-bold text-[10px] flex items-center justify-center gap-1.5 transition-colors border ${
+              showColliders
+                ? 'bg-[#00e676]/25 border-[#00e676] text-[#00e676]'
+                : 'bg-[#1e293b] border-[#334155] text-gray-300 hover:bg-[#334155]'
+            }`}
+          >
+            <Box size={11} />
+            <span>COLISORES 3D (FOOTPRINTS):</span>
+            <span className={showColliders ? 'text-white' : 'text-gray-400'}>
+              {showColliders ? 'ATIVOS (VISÍVEIS)' : 'OCULTOS'}
+            </span>
+          </button>
+        )}
+      </div>
+
       <div className="border-t border-[#253041] pt-1.5 space-y-1 text-[10px]">
         <div className="flex justify-between">
           <span className="text-gray-400">Qualidade:</span>
@@ -177,3 +261,4 @@ export const DiagnosticOverlay: React.FC<DiagnosticOverlayProps> = ({
     </div>
   );
 };
+

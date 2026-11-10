@@ -8,7 +8,7 @@ export interface SpriteFrame {
   width: number;
   height: number;
   /** Which source image this frame is cropped from. Defaults to 'main' when omitted. */
-  source?: 'main' | 'player1';
+  source?: 'main' | 'player1' | 'scenery_obstacles';
 }
 
 export const ATLAS_WIDTH = 1448;
@@ -100,50 +100,142 @@ export const ATLAS_FRAMES: Record<string, SpriteFrame> = {
   npc_mestre_ze_walk_2: { x: 1115, y: 230, width: 82, height: 105 },
   npc_mestre_ze_walk_3: { x: 1115, y: 340, width: 82, height: 105 },
 
-  // Passenger Portraits / Big
+  // ==============================================================
+  // 6 PERSONAGENS DA IMAGEM DE REFERÊNCIA (LUANDA URBAN STREET CRAZE)
+  // ==============================================================
+  // 1. Comerciante / Trabalhador de Bege (Camisa Cáqui & Bolsa Tiracolo)
+  passenger_comerciante_bege: { x: 12, y: 220, width: 78, height: 150 },
+  passenger_comerciante_bege_walk_0: { x: 12, y: 370, width: 28, height: 56 },
+  passenger_comerciante_bege_walk_1: { x: 42, y: 370, width: 28, height: 56 },
+  passenger_comerciante_bege_walk_2: { x: 72, y: 370, width: 28, height: 56 },
+  passenger_comerciante_bege_walk_3: { x: 102, y: 370, width: 28, height: 56 },
+
+  // 2. Estudante Uniformizado (Farda Branca, Gravata Azul & Mochila)
+  passenger_estudante_gravata: { x: 94, y: 220, width: 78, height: 150 },
+  passenger_estudante_gravata_walk_0: { x: 132, y: 370, width: 28, height: 56 },
+  passenger_estudante_gravata_walk_1: { x: 162, y: 370, width: 28, height: 56 },
+  passenger_estudante_gravata_walk_2: { x: 192, y: 370, width: 28, height: 56 },
+  passenger_estudante_gravata_walk_3: { x: 222, y: 370, width: 28, height: 56 },
+
+  // 3. Mama / Quitandeira (Turbante Amarelo, Vestido Roxo & Sacolas)
+  passenger_mama_quitandeira: { x: 177, y: 220, width: 78, height: 150 },
+  passenger_mama_quitandeira_walk_0: { x: 252, y: 370, width: 28, height: 56 },
+  passenger_mama_quitandeira_walk_1: { x: 282, y: 370, width: 28, height: 56 },
+  passenger_mama_quitandeira_walk_2: { x: 312, y: 370, width: 28, height: 56 },
+  passenger_mama_quitandeira_walk_3: { x: 342, y: 370, width: 28, height: 56 },
+
+  // 4. Executivo de Camisa Azul (Camisa Azul-Celeste, Pasta & Relógio)
+  passenger_executivo_azul: { x: 343, y: 220, width: 78, height: 150 },
+  passenger_executivo_azul_walk_0: { x: 492, y: 370, width: 28, height: 56 },
+  passenger_executivo_azul_walk_1: { x: 522, y: 370, width: 28, height: 56 },
+  passenger_executivo_azul_walk_2: { x: 552, y: 370, width: 28, height: 56 },
+  passenger_executivo_azul_walk_3: { x: 582, y: 370, width: 28, height: 56 },
+
+  // 5. Jovem Moça Estilosa (T-Shirt Amarela, Jeans & Tranças)
+  passenger_moca_amarela: { x: 260, y: 220, width: 78, height: 150 },
+  passenger_moca_amarela_walk_0: { x: 372, y: 370, width: 28, height: 56 },
+  passenger_moca_amarela_walk_1: { x: 402, y: 370, width: 28, height: 56 },
+  passenger_moca_amarela_walk_2: { x: 432, y: 370, width: 28, height: 56 },
+  passenger_moca_amarela_walk_3: { x: 462, y: 370, width: 28, height: 56 },
+
+  // 6. Jovem de Moletom Verde (Capuz Verde, Cordões & Ténis Brancos)
+  passenger_jovem_verde: { x: 426, y: 220, width: 78, height: 150 },
+  passenger_jovem_verde_walk_0: { x: 612, y: 370, width: 28, height: 56 },
+  passenger_jovem_verde_walk_1: { x: 642, y: 370, width: 28, height: 56 },
+  passenger_jovem_verde_walk_2: { x: 672, y: 370, width: 28, height: 56 },
+  passenger_jovem_verde_walk_3: { x: 702, y: 370, width: 28, height: 56 },
+
+  // Mapeamentos diretos
+  passenger_trabalhador: { x: 12, y: 220, width: 78, height: 150 },
+  passenger_trabalhador_walk_0: { x: 12, y: 370, width: 28, height: 56 },
+  passenger_trabalhador_walk_1: { x: 42, y: 370, width: 28, height: 56 },
+  passenger_trabalhador_walk_2: { x: 72, y: 370, width: 28, height: 56 },
+  passenger_trabalhador_walk_3: { x: 102, y: 370, width: 28, height: 56 },
+
+  passenger_estudante: { x: 94, y: 220, width: 78, height: 150 },
+  passenger_estudante_walk_0: { x: 132, y: 370, width: 28, height: 56 },
+  passenger_estudante_walk_1: { x: 162, y: 370, width: 28, height: 56 },
+  passenger_estudante_walk_2: { x: 192, y: 370, width: 28, height: 56 },
+  passenger_estudante_walk_3: { x: 222, y: 370, width: 28, height: 56 },
+
+  // 3. Idoso / Cota Mais Velho (Fato de Linho & Bengala)
+  passenger_idoso: { x: 177, y: 220, width: 78, height: 150 },
+  passenger_idoso_walk_0: { x: 252, y: 370, width: 28, height: 56 },
+  passenger_idoso_walk_1: { x: 282, y: 370, width: 28, height: 56 },
+  passenger_idoso_walk_2: { x: 312, y: 370, width: 28, height: 56 },
+  passenger_idoso_walk_3: { x: 342, y: 370, width: 28, height: 56 },
+
+  // 4. Jovem Estilosa / Mancebo (Streetwear & Tranças Afro)
+  passenger_jovem: { x: 260, y: 220, width: 78, height: 150 },
+  passenger_jovem_walk_0: { x: 372, y: 370, width: 28, height: 56 },
+  passenger_jovem_walk_1: { x: 402, y: 370, width: 28, height: 56 },
+  passenger_jovem_walk_2: { x: 432, y: 370, width: 28, height: 56 },
+  passenger_jovem_walk_3: { x: 462, y: 370, width: 28, height: 56 },
+
+  // 5. Executivo / Doutor (Fato Escuro & Pasta)
+  passenger_executivo: { x: 343, y: 220, width: 78, height: 150 },
+  passenger_executivo_walk_0: { x: 492, y: 370, width: 28, height: 56 },
+  passenger_executivo_walk_1: { x: 522, y: 370, width: 28, height: 56 },
+  passenger_executivo_walk_2: { x: 552, y: 370, width: 28, height: 56 },
+  passenger_executivo_walk_3: { x: 582, y: 370, width: 28, height: 56 },
+
+  // 6. Impaciente / Apressado (Relógio de Pulso & Tensão)
+  passenger_impaciente: { x: 426, y: 220, width: 78, height: 150 },
+  passenger_impaciente_walk_0: { x: 612, y: 370, width: 28, height: 56 },
+  passenger_impaciente_walk_1: { x: 642, y: 370, width: 28, height: 56 },
+  passenger_impaciente_walk_2: { x: 672, y: 370, width: 28, height: 56 },
+  passenger_impaciente_walk_3: { x: 702, y: 370, width: 28, height: 56 },
+
+  // 7. VIP / Patrão (Seda, Ouro & Elegância)
+  passenger_vip: { x: 509, y: 220, width: 78, height: 150 },
+  passenger_vip_walk_0: { x: 732, y: 370, width: 28, height: 56 },
+  passenger_vip_walk_1: { x: 762, y: 370, width: 28, height: 56 },
+  passenger_vip_walk_2: { x: 792, y: 370, width: 28, height: 56 },
+  passenger_vip_walk_3: { x: 822, y: 370, width: 28, height: 56 },
+
+  // Compatibilidade com chaves legadas mapeadas para os novos arquétipos
   passenger_normal: { x: 12, y: 220, width: 78, height: 150 },
-  passenger_apressado: { x: 94, y: 220, width: 78, height: 150 },
-  passenger_indeciso: { x: 177, y: 220, width: 78, height: 150 },
-  passenger_observador: { x: 260, y: 220, width: 78, height: 150 },
+  passenger_apressado: { x: 426, y: 220, width: 78, height: 150 },
+  passenger_indeciso: { x: 260, y: 220, width: 78, height: 150 },
+  passenger_observador: { x: 177, y: 220, width: 78, height: 150 },
   passenger_exigente: { x: 343, y: 220, width: 78, height: 150 },
   passenger_correria: { x: 426, y: 220, width: 78, height: 150 },
   passenger_especial: { x: 509, y: 220, width: 78, height: 150 },
 
-  // Passenger Walking Animations (4 frames each)
-  passenger_normal_walk_0: { x: 12, y: 370, width: 20, height: 48 },
-  passenger_normal_walk_1: { x: 31, y: 370, width: 20, height: 48 },
-  passenger_normal_walk_2: { x: 50, y: 370, width: 20, height: 48 },
-  passenger_normal_walk_3: { x: 69, y: 370, width: 20, height: 48 },
+  passenger_normal_walk_0: { x: 12, y: 370, width: 28, height: 56 },
+  passenger_normal_walk_1: { x: 42, y: 370, width: 28, height: 56 },
+  passenger_normal_walk_2: { x: 72, y: 370, width: 28, height: 56 },
+  passenger_normal_walk_3: { x: 102, y: 370, width: 28, height: 56 },
 
-  passenger_apressado_walk_0: { x: 94, y: 370, width: 20, height: 48 },
-  passenger_apressado_walk_1: { x: 113, y: 370, width: 20, height: 48 },
-  passenger_apressado_walk_2: { x: 132, y: 370, width: 20, height: 48 },
-  passenger_apressado_walk_3: { x: 151, y: 370, width: 20, height: 48 },
+  passenger_apressado_walk_0: { x: 612, y: 370, width: 28, height: 56 },
+  passenger_apressado_walk_1: { x: 642, y: 370, width: 28, height: 56 },
+  passenger_apressado_walk_2: { x: 672, y: 370, width: 28, height: 56 },
+  passenger_apressado_walk_3: { x: 702, y: 370, width: 28, height: 56 },
 
-  passenger_indeciso_walk_0: { x: 176, y: 370, width: 20, height: 48 },
-  passenger_indeciso_walk_1: { x: 195, y: 370, width: 20, height: 48 },
-  passenger_indeciso_walk_2: { x: 214, y: 370, width: 20, height: 48 },
-  passenger_indeciso_walk_3: { x: 233, y: 370, width: 20, height: 48 },
+  passenger_indeciso_walk_0: { x: 372, y: 370, width: 28, height: 56 },
+  passenger_indeciso_walk_1: { x: 402, y: 370, width: 28, height: 56 },
+  passenger_indeciso_walk_2: { x: 432, y: 370, width: 28, height: 56 },
+  passenger_indeciso_walk_3: { x: 462, y: 370, width: 28, height: 56 },
 
-  passenger_observador_walk_0: { x: 258, y: 370, width: 20, height: 48 },
-  passenger_observador_walk_1: { x: 277, y: 370, width: 20, height: 48 },
-  passenger_observador_walk_2: { x: 296, y: 370, width: 20, height: 48 },
-  passenger_observador_walk_3: { x: 315, y: 370, width: 20, height: 48 },
+  passenger_observador_walk_0: { x: 252, y: 370, width: 28, height: 56 },
+  passenger_observador_walk_1: { x: 282, y: 370, width: 28, height: 56 },
+  passenger_observador_walk_2: { x: 312, y: 370, width: 28, height: 56 },
+  passenger_observador_walk_3: { x: 342, y: 370, width: 28, height: 56 },
 
-  passenger_exigente_walk_0: { x: 340, y: 370, width: 20, height: 48 },
-  passenger_exigente_walk_1: { x: 359, y: 370, width: 20, height: 48 },
-  passenger_exigente_walk_2: { x: 378, y: 370, width: 20, height: 48 },
-  passenger_exigente_walk_3: { x: 397, y: 370, width: 20, height: 48 },
+  passenger_exigente_walk_0: { x: 492, y: 370, width: 28, height: 56 },
+  passenger_exigente_walk_1: { x: 522, y: 370, width: 28, height: 56 },
+  passenger_exigente_walk_2: { x: 552, y: 370, width: 28, height: 56 },
+  passenger_exigente_walk_3: { x: 582, y: 370, width: 28, height: 56 },
 
-  passenger_correria_walk_0: { x: 422, y: 370, width: 20, height: 48 },
-  passenger_correria_walk_1: { x: 441, y: 370, width: 20, height: 48 },
-  passenger_correria_walk_2: { x: 460, y: 370, width: 20, height: 48 },
-  passenger_correria_walk_3: { x: 479, y: 370, width: 20, height: 48 },
+  passenger_correria_walk_0: { x: 612, y: 370, width: 28, height: 56 },
+  passenger_correria_walk_1: { x: 642, y: 370, width: 28, height: 56 },
+  passenger_correria_walk_2: { x: 672, y: 370, width: 28, height: 56 },
+  passenger_correria_walk_3: { x: 702, y: 370, width: 28, height: 56 },
 
-  passenger_especial_walk_0: { x: 504, y: 370, width: 20, height: 48 },
-  passenger_especial_walk_1: { x: 523, y: 370, width: 20, height: 48 },
-  passenger_especial_walk_2: { x: 542, y: 370, width: 20, height: 48 },
-  passenger_especial_walk_3: { x: 561, y: 370, width: 20, height: 48 },
+  passenger_especial_walk_0: { x: 732, y: 370, width: 28, height: 56 },
+  passenger_especial_walk_1: { x: 762, y: 370, width: 28, height: 56 },
+  passenger_especial_walk_2: { x: 792, y: 370, width: 28, height: 56 },
+  passenger_especial_walk_3: { x: 822, y: 370, width: 28, height: 56 },
 
   // Taxis & Views
   taxi_normal: { x: 675, y: 220, width: 128, height: 78 },
@@ -279,6 +371,16 @@ export const ATLAS_FRAMES: Record<string, SpriteFrame> = {
   player_left_idle_0: { x: 17, y: 452, width: 55, height: 220, source: 'player1' },
   player_left_run_0: { x: 92, y: 452, width: 145, height: 220, source: 'player1' },
   player_left_run_1: { x: 241, y: 452, width: 167, height: 220, source: 'player1' },
+
+  // ==============================================================
+  // 6 OBSTÁCULOS E OBJETOS DE CENÁRIO (objetos-obstaculos.png)
+  // ==============================================================
+  paragem_taxi_placa: { x: 226, y: 23, width: 126, height: 155, source: 'scenery_obstacles' },
+  barraca_agua_fresca: { x: 385, y: 28, width: 173, height: 157, source: 'scenery_obstacles' },
+  banco_madeira: { x: 26, y: 70, width: 167, height: 106, source: 'scenery_obstacles' },
+  arvore: { x: 199, y: 200, width: 121, height: 168, source: 'scenery_obstacles' },
+  abrigo_paragem: { x: 356, y: 210, width: 227, height: 161, source: 'scenery_obstacles' },
+  cone_transito: { x: 55, y: 273, width: 76, height: 85, source: 'scenery_obstacles' },
 };
 
 export const ATLAS_PLAYER1_WIDTH = 412;

@@ -8,6 +8,8 @@ import { ATLAS_FRAMES } from '../utils/atlasData';
 import spritesheetImg from '../assets/images/lotador_spritesheet_1786361082992.webp';
 import player1SpritesheetImg from '../assets/images/player1_spritesheet.png';
 
+import { drawFallbackSprite } from '../utils/spriteAtlas';
+
 interface SpriteIconProps {
   name: string;
   className?: string;
@@ -58,6 +60,13 @@ export const SpriteIcon: React.FC<SpriteIconProps> = ({ name, className = '', st
 
     const ctx = canvas.getContext('2d', { willReadFrequently: false });
     if (!ctx) return;
+
+    // For passenger sprites, obstacles, effects and UI icons, use vector fallback renderer for 100% crispness
+    if (name.startsWith('passenger_') || name.startsWith('obstacle_') || name.startsWith('effect_') || name.startsWith('ui_')) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawFallbackSprite(ctx, name, canvas.width, canvas.height);
+      return;
+    }
 
     const isPlayerFrame =
       name.startsWith('player_front') ||

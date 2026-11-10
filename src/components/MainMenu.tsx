@@ -18,6 +18,7 @@ interface MainMenuProps {
   onOpenMissions: () => void;
   onOpenSettings: () => void;
   onOpenGuide: () => void;
+  onOpenSpritesheet?: () => void;
 }
 
 export const MainMenu: React.FC<MainMenuProps> = ({
@@ -30,6 +31,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onOpenMissions,
   onOpenSettings,
   onOpenGuide,
+  onOpenSpritesheet,
 }) => {
   const levelTitle = stats.levelTitle || getLevelTitle(stats.level);
   const [isTestCalling, setIsTestCalling] = useState(false);
@@ -237,6 +239,22 @@ export const MainMenu: React.FC<MainMenuProps> = ({
             <span className="text-xs">MISSÕES</span>
           </button>
         </div>
+
+        {/* 6 Cultural Characters & Godot Spritesheet Trigger */}
+        {onOpenSpritesheet && (
+          <button
+            onClick={() => handleClick(onOpenSpritesheet)}
+            className="w-full max-w-sm mt-2.5 bg-gradient-to-r from-[#161c28] via-[#1e293b] to-[#0f172a] hover:from-slate-800 hover:to-slate-900 text-white font-space font-black text-xs py-2.5 px-3.5 rounded-xl sticker-border hard-shadow flex items-center justify-between cursor-pointer btn-press transition-transform transform active:scale-95"
+          >
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[#ffd700] text-base">palette</span>
+              <span>SPRITES DOS 6 PERSONAGENS</span>
+            </div>
+            <span className="bg-[#ffd700] text-[#161c28] text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+              GODOT / EXPORTAR
+            </span>
+          </button>
+        )}
       </main>
 
       {/* Footer */}

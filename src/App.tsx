@@ -25,6 +25,7 @@ import { MissionsModal } from './components/MissionsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { HowToPlayGuide } from './components/HowToPlayGuide';
 import { PauseModal } from './components/PauseModal';
+import { SpriteSheetModal } from './components/SpriteSheetModal';
 import { PWAStatusBanner } from './components/PWAStatusBanner';
 import { TutorialOverlay, TutorialStep } from './components/TutorialOverlay';
 import { useMobileLifecycle, tryLockLandscapeWeb } from './hooks/useMobileLifecycle';
@@ -95,7 +96,7 @@ export default function App() {
 
   // Modals
   const [activeModal, setActiveModal] = useState<
-    'UPGRADES' | 'CHARACTER' | 'MAPS' | 'MISSIONS' | 'SETTINGS' | 'MENTOR' | 'GUIDE' | null
+    'UPGRADES' | 'CHARACTER' | 'MAPS' | 'MISSIONS' | 'SETTINGS' | 'MENTOR' | 'GUIDE' | 'SPRITESHEET' | null
   >(null);
   const [isPaused, setIsPaused] = useState(false);
 
@@ -759,6 +760,7 @@ export default function App() {
           onOpenMissions={() => setActiveModal('MISSIONS')}
           onOpenSettings={() => setActiveModal('SETTINGS')}
           onOpenGuide={() => setActiveModal('GUIDE')}
+          onOpenSpritesheet={() => setActiveModal('SPRITESHEET')}
         />
       )}
 
@@ -959,6 +961,13 @@ export default function App() {
         />
       )}
 
+      {activeModal === 'SPRITESHEET' && (
+        <SpriteSheetModal
+          isOpen={true}
+          onClose={() => setActiveModal(null)}
+        />
+      )}
+
       {/* PWA Offline / Update / Install Status Banner */}
       <PWAStatusBanner />
 
@@ -974,8 +983,19 @@ export default function App() {
         />
       )}
 
-      {/* Dev-Only Storage & Network Telemetry Diagnostics */}
-     
+      {/* Dev-Only Storage, Collision & Network Telemetry Diagnostics */}
+      {import.meta.env.DEV && (
+        <DiagnosticOverlay
+          fps={engineRef.current?.currentFps || 60}
+          entityCount={{
+            passengers: passengers.length,
+            taxis: taxis.length,
+            particles: 0,
+          }}
+          graphicsQuality={gameSettings.graphicsQuality}
+          engine={engineRef.current}
+        />
+      )}
     </div>
   );
 }

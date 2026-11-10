@@ -223,7 +223,7 @@ export const HowToPlayGuide: React.FC<HowToPlayGuideProps> = ({ onClose, onStart
                 {/* Approaching Passenger Sprite */}
                 <div className="relative z-10 flex flex-col items-center">
                   <div className="relative">
-                    <SpriteIcon name="passenger_man_idle" className="w-14 h-22 filter drop-shadow-md" />
+                    <SpriteIcon name="passenger_trabalhador" className="w-14 h-22 filter drop-shadow-md" />
                     <div className="absolute -top-3 right-0 bg-[#006399] text-white rounded-full w-5 h-5 flex items-center justify-center text-[10px] font-black border border-white animate-bounce">
                       ✓
                     </div>

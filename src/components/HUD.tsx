@@ -332,10 +332,13 @@ const HUDComponent: React.FC<HUDProps> = ({
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/90 border border-emerald-400 text-white shadow-md animate-pulse">
                 <span className="text-[10px]">🚶</span>
                 <span className="text-[9px] font-anybody font-black uppercase text-emerald-300">
-                  CONDUZINDO:
+                  {followedPassenger.name || 'PASSAGEIRO'}:
                 </span>
                 <span className="text-[10px] font-anybody font-black uppercase text-white bg-emerald-600/80 px-1.5 rounded">
                   {followedPassenger.destination}
+                </span>
+                <span className="text-[9px] font-mono font-bold text-amber-300">
+                  +{followedPassenger.value} Kz
                 </span>
               </div>
             )}

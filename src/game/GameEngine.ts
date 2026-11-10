@@ -27,6 +27,8 @@ import { classifyDevice, DynamicResolutionScaler } from '../utils/deviceProfile'
 import { ParagemEventManager } from './ParagemEventManager';
 import { ParagemEvent } from '../types/events';
 import { canPassengerFollow } from '../utils/gameLogic';
+import { SceneryObstacleManager } from './SceneryObstacleManager';
+import { sceneryAtlasManager } from '../utils/sceneryAtlas';
 
 export interface GameEngineCallbacks {
   onScoreUpdate: (kz: number, xp: number, combo: number) => void;
@@ -259,14 +261,14 @@ export class GameEngine {
   public static async preloadAllAssets(onProgress?: (percent: number) => void): Promise<void> {
     onProgress?.(15);
 
-    // If both assets are already loaded in memory, report 100% immediately
-    if (GameEngine.cachedTaxiModel && spriteAtlasManager.isLoaded()) {
+    // If all assets are already loaded in memory, report 100% immediately
+    if (GameEngine.cachedTaxiModel && spriteAtlasManager.isLoaded() && sceneryAtlasManager.isReady()) {
       onProgress?.(100);
       return;
     }
 
     let loadedCount = 0;
-    const totalSteps = 2;
+    const totalSteps = 3;
 
     const stepDone = () => {
       loadedCount++;
@@ -288,7 +290,14 @@ export class GameEngine {
         stepDone();
       });
 
-    await Promise.all([modelPromise, atlasPromise]);
+    const sceneryPromise = sceneryAtlasManager.waitUntilLoaded()
+      .then(() => stepDone())
+      .catch((err) => {
+        console.warn('[AssetPreloader] Warning loading scenery obstacles:', err);
+        stepDone();
+      });
+
+    await Promise.all([modelPromise, atlasPromise, sceneryPromise]);
 
     // Warm up core sprite textures in memory so they are instantly ready on frame 0
     try {
@@ -335,6 +344,7 @@ export class GameEngine {
   public urbanObstacles: UrbanObstacle[] = [];
   public activeDispute: PassengerDispute | null = null;
   public playerStumbleTimer = 0;
+  public sceneryObstacleManager!: SceneryObstacleManager;
   
   // Meshes
   private playerMesh!: THREE.Group;
@@ -501,6 +511,7 @@ export class GameEngine {
     this.stamina = this.maxStamina;
 
     this.initThree();
+    this.sceneryObstacleManager = new SceneryObstacleManager(this.scene);
     this.buildMap();
     this.initPlayer();
     this.initNPCs();
@@ -649,6 +660,9 @@ export class GameEngine {
     this.taxiMeshes.forEach((mesh) => {
       mesh.renderOrder = 1000 - Math.round(mesh.position.z * 10);
     });
+    if (this.sceneryObstacleManager) {
+      this.sceneryObstacleManager.updateDepthSorting();
+    }
   }
 
   private initThree() {
@@ -814,18 +828,9 @@ export class GameEngine {
       this.scene.add(prop);
     });
 
-    // 4. Paragem Signs & Benches
-    this.createParagemSign(-12, 0.4, 1);
-    this.createParagemSign(0, 0.4, 1);
-    this.createParagemSign(12, 0.4, 1);
-
-    // Benches & Trees
-    for (let x = -20; x <= 20; x += 10) {
-      if (x !== 0) {
-        this.createBench(x, 0.4, 7);
-        this.createTree(x + 4, 0.4, 9);
-      }
-    }
+    // 4. Pixel-Art Paragem Scenery & Obstacles (objetos-obstaculos.png)
+    const currentZone = this.playerStats.selectedMapId || 'PARAGEM_URBANA';
+    this.sceneryObstacleManager.initLevelScenery(currentZone);
 
     // 5. Demarcações 3D das 3 Baias de Candongueiros (Baia 1: Viana, Baia 2: Cacuaco, Baia 3: Kilamba)
     this.createTaxiBayDemarcations();
@@ -1527,7 +1532,7 @@ export class GameEngine {
     const group = new THREE.Group();
 
     // 2D Billboard Sprite using real Atlas Frame
-    const frameKey = spriteFrameName || (isPlayer ? 'player_front_idle_0' : 'passenger_normal');
+    const frameKey = spriteFrameName || (isPlayer ? 'player_front_idle_0' : 'passenger_trabalhador');
     const tex = spriteAtlasManager.getTexture(frameKey);
     const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.1 });
     const sprite = new THREE.Sprite(spriteMat);
@@ -1630,8 +1635,8 @@ export class GameEngine {
 
     const passenger: Passenger = {
       id,
-      name: 'Passageiro de Viana',
-      type: 'NORMAL',
+      name: 'Trabalhador de Viana',
+      type: 'TRABALHADOR',
       destination: 'VIANA',
       value: 150,
       urgency: 1,
@@ -1650,7 +1655,7 @@ export class GameEngine {
     };
 
     this.passengers.push(passenger);
-    const pMesh = this.createStylizedCharacter(0x006399, 0x161c28, false, 'passenger_normal');
+    const pMesh = this.createStylizedCharacter(0x006399, 0x161c28, false, 'passenger_trabalhador');
     pMesh.position.set(startX, 0.6, startZ);
     this.scene.add(pMesh);
     this.passengerMeshes.set(id, pMesh);
@@ -2055,20 +2060,20 @@ export class GameEngine {
     const candidateRoutes = activeTaxiRoutes.length > 0 && Math.random() < 0.75 ? activeTaxiRoutes : fallbackRoutes;
     const route = candidateRoutes[Math.floor(Math.random() * candidateRoutes.length)];
 
-    // 7 Perfis de passageiros com multiplicadores de velocidade e paciência:
-    // Trabalhador, Estudante, Idoso, Jovem, Executivo, Impaciente, VIP
+    // 6 Personagens da imagem de referência de Luanda:
+    // 1. Comerciante de Bege, 2. Estudante Uniformizado, 3. Mama Quitandeira,
+    // 4. Executivo de Camisa Azul, 5. Jovem Moça Estilosa, 6. Jovem de Moletom Verde
     const profileWeights: { type: PassengerType; weight: number }[] = [
-      { type: 'TRABALHADOR', weight: 25 },
-      { type: 'ESTUDANTE', weight: 20 },
-      { type: 'JOVEM', weight: 15 },
-      { type: 'IDOSO', weight: 12 },
-      { type: 'IMPACIENTE', weight: 12 },
-      { type: 'EXECUTIVO', weight: 10 },
-      { type: 'VIP', weight: 6 },
+      { type: 'COMERCIANTE_BEGE', weight: 20 },
+      { type: 'ESTUDANTE_GRAVATA', weight: 20 },
+      { type: 'MAMA_ROXO', weight: 18 },
+      { type: 'EXECUTIVO_AZUL', weight: 15 },
+      { type: 'MOCA_AMARELA', weight: 15 },
+      { type: 'JOVEM_VERDE', weight: 12 },
     ];
     const totalWeight = profileWeights.reduce((acc, p) => acc + p.weight, 0);
     let rand = Math.random() * totalWeight;
-    let selectedProfile: PassengerType = 'TRABALHADOR';
+    let selectedProfile: PassengerType = 'COMERCIANTE_BEGE';
     for (const pw of profileWeights) {
       if (rand < pw.weight) {
         selectedProfile = pw.type;
@@ -2077,62 +2082,67 @@ export class GameEngine {
       rand -= pw.weight;
     }
 
-    // Perfil configs
-    let baseSpeed = 3.2;
-    let basePatience = 45;
-    let baseValue = 120;
+    let baseSpeed = 3.3;
+    let basePatience = 48;
+    let baseValue = 150;
     let urgency = 2;
-    let displayName = 'Trabalhador';
+    let displayName = 'Comerciante de Bege';
+    let spriteFrameName = 'passenger_comerciante_bege';
 
     switch (selectedProfile) {
+      case 'ESTUDANTE_GRAVATA':
       case 'ESTUDANTE':
-        baseSpeed = 3.8;
-        basePatience = 30;
-        baseValue = 80;
-        urgency = 3;
-        displayName = 'Estudante';
-        break;
-      case 'IDOSO':
-        baseSpeed = 2.2;
-        basePatience = 65;
-        baseValue = 150;
-        urgency = 1;
-        displayName = 'Idoso';
-        break;
-      case 'JOVEM':
-        baseSpeed = 3.5;
+        baseSpeed = 4.0;
         basePatience = 35;
         baseValue = 100;
         urgency = 3;
-        displayName = 'Jovem';
+        displayName = 'Estudante Uniformizado';
+        spriteFrameName = 'passenger_estudante_gravata';
         break;
+      case 'MAMA_ROXO':
+      case 'IDOSO':
+        baseSpeed = 2.4;
+        basePatience = 60;
+        baseValue = 200;
+        urgency = 1;
+        displayName = 'Mama Quitandeira';
+        spriteFrameName = 'passenger_mama_quitandeira';
+        break;
+      case 'EXECUTIVO_AZUL':
       case 'EXECUTIVO':
-        baseSpeed = 3.4;
-        basePatience = 20;
+      case 'VIP':
+        baseSpeed = 3.5;
+        basePatience = 25;
         baseValue = 280;
         urgency = 4;
-        displayName = 'Executivo';
+        displayName = 'Executivo de Camisa Azul';
+        spriteFrameName = 'passenger_executivo_azul';
         break;
-      case 'IMPACIENTE':
-        baseSpeed = 4.0;
-        basePatience = 16;
+      case 'MOCA_AMARELA':
+      case 'JOVEM':
+        baseSpeed = 3.8;
+        basePatience = 40;
         baseValue = 160;
-        urgency = 5;
-        displayName = 'Impaciente';
-        break;
-      case 'VIP':
-        baseSpeed = 3.6;
-        basePatience = 28;
-        baseValue = 450;
         urgency = 3;
-        displayName = 'VIP';
+        displayName = 'Jovem Moça Estilosa';
+        spriteFrameName = 'passenger_moca_amarela';
+        break;
+      case 'JOVEM_VERDE':
+      case 'IMPACIENTE':
+        baseSpeed = 4.2;
+        basePatience = 22;
+        baseValue = 170;
+        urgency = 4;
+        displayName = 'Jovem de Moletom Verde';
+        spriteFrameName = 'passenger_jovem_verde';
         break;
       default:
-        baseSpeed = 3.2;
-        basePatience = 45;
-        baseValue = 120;
+        baseSpeed = 3.3;
+        basePatience = 48;
+        baseValue = 150;
         urgency = 2;
-        displayName = 'Trabalhador';
+        displayName = 'Comerciante de Bege';
+        spriteFrameName = 'passenger_comerciante_bege';
         break;
     }
 
@@ -2142,8 +2152,18 @@ export class GameEngine {
     }
 
     const id = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-    const startX = -18 + Math.random() * 36;
-    const startZ = 2 + Math.random() * 7;
+    let startX = -18 + Math.random() * 36;
+    let startZ = 2 + Math.random() * 7;
+    let attempts = 0;
+    while (
+      this.sceneryObstacleManager &&
+      !this.sceneryObstacleManager.isClearForSpawn(startX, startZ, 2.0) &&
+      attempts < 12
+    ) {
+      startX = -18 + Math.random() * 36;
+      startZ = 2 + Math.random() * 7;
+      attempts++;
+    }
 
     const passenger: Passenger = {
       id,
@@ -2167,16 +2187,6 @@ export class GameEngine {
     };
 
     this.passengers.push(passenger);
-
-    // Map passenger profile to real atlas sprite frame name
-    const spriteFrameName = 
-      selectedProfile === 'ESTUDANTE' ? 'passenger_apressado' :
-      selectedProfile === 'JOVEM' ? 'passenger_indeciso' :
-      selectedProfile === 'IDOSO' ? 'passenger_observador' :
-      selectedProfile === 'EXECUTIVO' ? 'passenger_exigente' :
-      selectedProfile === 'IMPACIENTE' ? 'passenger_correria' :
-      selectedProfile === 'VIP' ? 'passenger_especial' :
-      'passenger_normal';
 
     // Acquire mesh from pool or create if empty
     let pMesh = this.passengerMeshPool.pop();
@@ -2286,7 +2296,14 @@ export class GameEngine {
     const charMultiplier = this.playerStats.selectedCharacter === 'TIO_BETY' ? 1.25 : 1.0;
     const reward = Math.round(p.value * this.combo * eventMultiplier * charMultiplier);
     this.matchKz += reward;
-    this.matchXp += 15;
+    const profileXp = 
+      p.type === 'VIP' ? 70 :
+      p.type === 'EXECUTIVO' ? 45 :
+      p.type === 'IDOSO' || p.type === 'IMPACIENTE' ? 35 :
+      p.type === 'JOVEM' ? 30 :
+      p.type === 'TRABALHADOR' ? 25 :
+      20;
+    this.matchXp += profileXp;
 
     this.callbacks.onScoreUpdate(this.matchKz, this.matchXp, this.combo);
     this.callbacks.onFloatingText(`+${reward} Kz`, '#ffd700', matchingTaxi.position);
@@ -2578,6 +2595,11 @@ export class GameEngine {
         }
       }
     });
+
+    // Solid collision with Scenery Obstacles (footprint axial sliding)
+    if (this.sceneryObstacleManager) {
+      this.sceneryObstacleManager.resolveSlidingCollision(this.playerPos, 0.45);
+    }
 
     const actualDx = this.playerPos.x - oldX;
     const actualDz = this.playerPos.z - oldZ;
@@ -3148,6 +3170,17 @@ export class GameEngine {
         }
       }
 
+      // AI Obstacle Steering & Avoidance
+      if (this.sceneryObstacleManager) {
+        const steered = this.sceneryObstacleManager.steerAroundObstacles(
+          npc.position,
+          { x: targetVelX, z: targetVelZ },
+          0.9
+        );
+        targetVelX = steered.x;
+        targetVelZ = steered.z;
+      }
+
       // Smooth inertia velocity
       npc.velocity = npc.velocity || { x: 0, z: 0 };
       npc.velocity.x = THREE.MathUtils.lerp(npc.velocity.x, targetVelX, 14 * delta);
@@ -3158,6 +3191,10 @@ export class GameEngine {
 
       npc.position.x += npc.velocity.x * delta;
       npc.position.z += npc.velocity.z * delta;
+
+      if (this.sceneryObstacleManager) {
+        this.sceneryObstacleManager.resolveSlidingCollision(npc.position, 0.45);
+      }
 
       const actualDx = npc.position.x - oldX;
       const actualDz = npc.position.z - oldZ;
@@ -3230,13 +3267,19 @@ export class GameEngine {
       )) as THREE.Mesh;
 
       const pTypeKey = 
-        p.type === 'APRESSADO' || p.type === 'ESTUDANTE' ? 'passenger_apressado' :
-        p.type === 'INDECISO' || p.type === 'JOVEM' ? 'passenger_indeciso' :
-        p.type === 'OBSERVADOR' || p.type === 'IDOSO' ? 'passenger_observador' :
-        p.type === 'EXIGENTE' || p.type === 'EXECUTIVO' ? 'passenger_exigente' :
-        p.type === 'CORRERIA' || p.type === 'IMPACIENTE' ? 'passenger_correria' :
-        p.type === 'ESPECIAL' || p.type === 'VIP' ? 'passenger_especial' :
-        'passenger_normal';
+        p.type === 'TRABALHADOR' ? 'passenger_trabalhador' :
+        p.type === 'ESTUDANTE' ? 'passenger_estudante' :
+        p.type === 'IDOSO' ? 'passenger_idoso' :
+        p.type === 'JOVEM' ? 'passenger_jovem' :
+        p.type === 'EXECUTIVO' ? 'passenger_executivo' :
+        p.type === 'IMPACIENTE' ? 'passenger_impaciente' :
+        p.type === 'VIP' ? 'passenger_vip' :
+        p.type === 'APRESSADO' || p.type === 'CORRERIA' ? 'passenger_impaciente' :
+        p.type === 'INDECISO' ? 'passenger_jovem' :
+        p.type === 'OBSERVADOR' ? 'passenger_idoso' :
+        p.type === 'EXIGENTE' ? 'passenger_executivo' :
+        p.type === 'ESPECIAL' ? 'passenger_vip' :
+        'passenger_trabalhador';
 
       let targetVelX = 0;
       let targetVelZ = 0;
@@ -3308,6 +3351,10 @@ export class GameEngine {
 
       p.position.x += p.velocity.x * delta;
       p.position.z += p.velocity.z * delta;
+
+      if (this.sceneryObstacleManager) {
+        this.sceneryObstacleManager.resolveSlidingCollision(p.position, 0.4);
+      }
 
       const actualDx = p.position.x - oldX;
       const actualDz = p.position.z - oldZ;
@@ -3562,6 +3609,10 @@ export class GameEngine {
     this.npcMeshes.clear();
     this.obstacleMeshes.clear();
 
+    if (this.sceneryObstacleManager) {
+      this.sceneryObstacleManager.clear();
+    }
+
     if (this.renderer) {
       this.renderer.dispose();
       if (this.renderer.domElement && this.renderer.domElement.parentNode) {
@@ -3569,5 +3620,16 @@ export class GameEngine {
       }
       this.renderer.forceContextLoss();
     }
+  }
+
+  public toggleSceneryCollidersDebug(): boolean {
+    if (!this.sceneryObstacleManager) return false;
+    const next = !this.sceneryObstacleManager.isDebugCollidersVisible();
+    this.sceneryObstacleManager.setDebugColliders(next);
+    return next;
+  }
+
+  public getSceneryCollidersDebug(): boolean {
+    return this.sceneryObstacleManager?.isDebugCollidersVisible() || false;
   }
 }

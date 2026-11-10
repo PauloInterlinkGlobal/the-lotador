@@ -3,20 +3,186 @@
  */
 
 export type PassengerType = 
-  | 'NORMAL'
-  | 'APRESSADO'
-  | 'INDECISO'
-  | 'OBSERVADOR'
-  | 'EXIGENTE'
-  | 'CORRERIA'
-  | 'ESPECIAL'
+  | 'COMERCIANTE_BEGE'
+  | 'ESTUDANTE_GRAVATA'
+  | 'MAMA_ROXO'
+  | 'EXECUTIVO_AZUL'
+  | 'MOCA_AMARELA'
+  | 'JOVEM_VERDE'
   | 'TRABALHADOR'
   | 'ESTUDANTE'
   | 'IDOSO'
   | 'JOVEM'
   | 'EXECUTIVO'
   | 'IMPACIENTE'
-  | 'VIP';
+  | 'VIP'
+  // Legacy aliases for backward compatibility
+  | 'NORMAL'
+  | 'APRESSADO'
+  | 'INDECISO'
+  | 'OBSERVADOR'
+  | 'EXIGENTE'
+  | 'CORRERIA'
+  | 'ESPECIAL';
+
+export interface PassengerArchetypeDef {
+  type: PassengerType;
+  label: string;
+  tagline: string;
+  speed: number;
+  patience: number;
+  value: number;
+  xp: number;
+  spriteKey: string;
+  color: string;
+}
+
+export const LUANDA_PASSENGER_ARCHETYPES: Record<string, PassengerArchetypeDef> = {
+  COMERCIANTE_BEGE: {
+    type: 'COMERCIANTE_BEGE',
+    label: 'Comerciante de Bege',
+    tagline: 'Camisa cáqui, bolsa transversal e passo firme',
+    speed: 3.3,
+    patience: 48,
+    value: 150,
+    xp: 25,
+    spriteKey: 'passenger_comerciante_bege',
+    color: '#d4a373',
+  },
+  ESTUDANTE_GRAVATA: {
+    type: 'ESTUDANTE_GRAVATA',
+    label: 'Estudante Uniformizado',
+    tagline: 'Farda branca, gravata azul e mochila',
+    speed: 4.0,
+    patience: 35,
+    value: 100,
+    xp: 20,
+    spriteKey: 'passenger_estudante_gravata',
+    color: '#38bdf8',
+  },
+  MAMA_ROXO: {
+    type: 'MAMA_ROXO',
+    label: 'Mama Quitandeira',
+    tagline: 'Vestido roxo estampado e sacolas cheias',
+    speed: 2.4,
+    patience: 60,
+    value: 200,
+    xp: 35,
+    spriteKey: 'passenger_mama_quitandeira',
+    color: '#9333ea',
+  },
+  EXECUTIVO_AZUL: {
+    type: 'EXECUTIVO_AZUL',
+    label: 'Executivo de Camisa Azul',
+    tagline: 'Camisa azul, pasta de couro e relógio',
+    speed: 3.5,
+    patience: 25,
+    value: 280,
+    xp: 45,
+    spriteKey: 'passenger_executivo_azul',
+    color: '#0284c7',
+  },
+  MOCA_AMARELA: {
+    type: 'MOCA_AMARELA',
+    label: 'Jovem Moça Estilosa',
+    tagline: 'T-shirt amarela, jeans e tranças compridas',
+    speed: 3.8,
+    patience: 40,
+    value: 160,
+    xp: 30,
+    spriteKey: 'passenger_moca_amarela',
+    color: '#eab308',
+  },
+  JOVEM_VERDE: {
+    type: 'JOVEM_VERDE',
+    label: 'Jovem de Moletom Verde',
+    tagline: 'Moletom verde com capuz e ténis brancos',
+    speed: 4.2,
+    patience: 22,
+    value: 170,
+    xp: 30,
+    spriteKey: 'passenger_jovem_verde',
+    color: '#16a34a',
+  },
+  // Mapeamentos para manter compatibilidade
+  TRABALHADOR: {
+    type: 'TRABALHADOR',
+    label: 'Comerciante de Bege',
+    tagline: 'Camisa cáqui, bolsa transversal e passo firme',
+    speed: 3.3,
+    patience: 48,
+    value: 150,
+    xp: 25,
+    spriteKey: 'passenger_comerciante_bege',
+    color: '#d4a373',
+  },
+  ESTUDANTE: {
+    type: 'ESTUDANTE',
+    label: 'Estudante Uniformizado',
+    tagline: 'Farda branca, gravata azul e mochila',
+    speed: 4.0,
+    patience: 35,
+    value: 100,
+    xp: 20,
+    spriteKey: 'passenger_estudante_gravata',
+    color: '#38bdf8',
+  },
+  IDOSO: {
+    type: 'IDOSO',
+    label: 'Mama Quitandeira',
+    tagline: 'Vestido roxo estampado e sacolas cheias',
+    speed: 2.4,
+    patience: 60,
+    value: 200,
+    xp: 35,
+    spriteKey: 'passenger_mama_quitandeira',
+    color: '#9333ea',
+  },
+  JOVEM: {
+    type: 'JOVEM',
+    label: 'Jovem Moça Estilosa',
+    tagline: 'T-shirt amarela, jeans e tranças compridas',
+    speed: 3.8,
+    patience: 40,
+    value: 160,
+    xp: 30,
+    spriteKey: 'passenger_moca_amarela',
+    color: '#eab308',
+  },
+  EXECUTIVO: {
+    type: 'EXECUTIVO',
+    label: 'Executivo de Camisa Azul',
+    tagline: 'Camisa azul, pasta de couro e relógio',
+    speed: 3.5,
+    patience: 25,
+    value: 280,
+    xp: 45,
+    spriteKey: 'passenger_executivo_azul',
+    color: '#0284c7',
+  },
+  IMPACIENTE: {
+    type: 'IMPACIENTE',
+    label: 'Jovem de Moletom Verde',
+    tagline: 'Moletom verde com capuz e ténis brancos',
+    speed: 4.2,
+    patience: 22,
+    value: 170,
+    xp: 30,
+    spriteKey: 'passenger_jovem_verde',
+    color: '#16a34a',
+  },
+  VIP: {
+    type: 'VIP',
+    label: 'Executivo de Camisa Azul',
+    tagline: 'Camisa azul, pasta de couro e relógio',
+    speed: 3.5,
+    patience: 25,
+    value: 280,
+    xp: 45,
+    spriteKey: 'passenger_executivo_azul',
+    color: '#0284c7',
+  },
+};
 
 export type PassengerState = 
   | 'SPAWNING'

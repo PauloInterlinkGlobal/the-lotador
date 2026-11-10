@@ -19,10 +19,12 @@
 import * as THREE from 'three';
 import { ATLAS_FRAMES } from './atlasData';
 import player1SpritesheetImg from '../assets/images/player1_spritesheet.png';
+import sceneryObstaclesImg from '../assets/images/objetos-obstaculos.png';
 
 // Registry of real (image-backed) atlas source images.
 const ATLAS_SOURCES: Record<string, string> = {
   player1: player1SpritesheetImg,
+  scenery_obstacles: sceneryObstaclesImg,
 };
 
 class SpriteAtlasManager {
@@ -276,7 +278,9 @@ class SpriteAtlasManager {
 export function drawFallbackSprite(ctx: CanvasRenderingContext2D, name: string, w: number, h: number) {
   ctx.save();
 
-  if (name.startsWith('player') || name.startsWith('npc') || name.startsWith('passenger')) {
+  if (name.startsWith('passenger')) {
+    drawLuandaPassengerSprite(ctx, name, w, h);
+  } else if (name.startsWith('player') || name.startsWith('npc')) {
     drawPersonSprite(ctx, name, w, h);
   } else if (name.startsWith('obstacle_zungueira')) {
     drawZungueiraSprite(ctx, name, w, h);
@@ -326,6 +330,461 @@ export function drawFallbackSprite(ctx: CanvasRenderingContext2D, name: string, 
     ctx.strokeStyle = '#161c28';
     ctx.lineWidth = 3;
     ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Vector rendering for the 7 Cultural Passenger Archetypes of Luanda:
+ * 1. Trabalhador (Construction/Laborer with high-vis vest & hardhat)
+ * 2. Estudante (Luanda student with sky-blue uniform & backpack)
+ * 3. Idoso / Cota (Respected elder in linen suit with walking cane)
+ * 4. Jovem (Urban youth in colorful streetwear with afro braids & headphones)
+ * 5. Executivo (Corporate professional in dark blazer with briefcase)
+ * 6. Impaciente (Hurried commuter checking wristwatch with phone)
+ * 7. VIP / Patrão (Wealthy patron in patterned silk with gold chain)
+ */
+function drawLuandaPassengerSprite(ctx: CanvasRenderingContext2D, name: string, w: number, h: number) {
+  // Determine archetype based on reference image
+  let archetype = 'comerciante_bege';
+  if (name.includes('estudante_gravata') || name.includes('estudante')) {
+    archetype = 'estudante_gravata';
+  } else if (name.includes('mama_quitandeira') || name.includes('idoso') || name.includes('observador')) {
+    archetype = 'mama_quitandeira';
+  } else if (name.includes('executivo_azul') || name.includes('executivo') || name.includes('exigente')) {
+    archetype = 'executivo_azul';
+  } else if (name.includes('moca_amarela') || name.includes('jovem') || name.includes('indeciso')) {
+    archetype = 'moca_amarela';
+  } else if (name.includes('jovem_verde') || name.includes('impaciente') || name.includes('apressado') || name.includes('correria')) {
+    archetype = 'jovem_verde';
+  } else if (name.includes('vip') || name.includes('especial')) {
+    archetype = 'executivo_azul';
+  } else {
+    archetype = 'comerciante_bege';
+  }
+
+  // Calculate walking swing / frame offset
+  let legOffset = 0;
+  let torsoBob = 0;
+  if (name.includes('_walk_')) {
+    const parts = name.split('_');
+    const idx = parseInt(parts[parts.length - 1] || '0', 10);
+    const swings = [0, 6, 2, -2, -6, -2, 0, 2];
+    legOffset = swings[idx % 8] || 0;
+    torsoBob = Math.abs(legOffset) * 0.15;
+  }
+
+  // Base ground shadow
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+  ctx.beginPath();
+  ctx.ellipse(w / 2, h - 4, w * 0.36, 4.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.save();
+  ctx.translate(0, -torsoBob);
+
+  switch (archetype) {
+    case 'comerciante_bege': {
+      // 1. COMERCIANTE / TRABALHADOR DE BEGE (Camisa Cáqui, Bolsa Tiracolo, Jeans Escuro, Barba)
+      // Sapatos escuros
+      ctx.fillStyle = '#27272a';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.24 - legOffset * 0.2, h * 0.78, w * 0.22, h * 0.18, 3);
+      ctx.roundRect(w * 0.54 + legOffset * 0.2, h * 0.78, w * 0.22, h * 0.18, 3);
+      ctx.fill();
+
+      // Calça jeans escura
+      ctx.fillStyle = '#1e3a8a';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.22 - legOffset * 0.16, h * 0.56, w * 0.24, h * 0.24, 4);
+      ctx.roundRect(w * 0.54 + legOffset * 0.16, h * 0.56, w * 0.24, h * 0.24, 4);
+      ctx.fill();
+
+      // Cinto de couro marrom
+      ctx.fillStyle = '#451a03';
+      ctx.fillRect(w * 0.2, h * 0.54, w * 0.6, 5);
+      ctx.fillStyle = '#d4d4d8';
+      ctx.strokeRect(w / 2 - 4, h * 0.53, 8, 6);
+
+      // Camisa cáqui / bege de manga curta
+      ctx.fillStyle = '#d4a373';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.18, h * 0.32, w * 0.64, h * 0.24, 6);
+      ctx.fill();
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = '#a67c52';
+      ctx.stroke();
+
+      // Bolsos da camisa cáqui
+      ctx.fillStyle = '#c59263';
+      ctx.fillRect(w * 0.24, h * 0.38, 8, 8);
+      ctx.fillRect(w * 0.66, h * 0.38, 8, 8);
+
+      // Faixa diagonal da bolsa transversal (do ombro direito ao quadril esquerdo)
+      ctx.strokeStyle = '#5c2b0c';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.72, h * 0.32);
+      ctx.lineTo(w * 0.2, h * 0.58);
+      ctx.stroke();
+
+      // Bolsa tiracolo de couro marrom
+      ctx.fillStyle = '#5c2b0c';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.12, h * 0.52, 14, 18, 3);
+      ctx.fill();
+      ctx.fillStyle = '#ca8a04';
+      ctx.fillRect(w * 0.16, h * 0.6, 6, 2);
+
+      // Cabeça & Pescoço
+      ctx.fillStyle = '#8d5524';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.22, w * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#161c28';
+      ctx.stroke();
+
+      // Barba e bigode aparados
+      ctx.fillStyle = '#18181b';
+      ctx.beginPath();
+      ctx.ellipse(w / 2, h * 0.26, 8, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Cabelo curto crespo
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.15, w * 0.22, Math.PI, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case 'estudante_gravata': {
+      // 2. ESTUDANTE UNIFORMIZADO (Camisa Branca, Gravata Azul, Calça Azul, Ténis Preto, Mochila)
+      // Ténis pretos com sola branca
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(w * 0.24 - legOffset * 0.18, h * 0.88, w * 0.22, 3);
+      ctx.fillRect(w * 0.54 + legOffset * 0.18, h * 0.88, w * 0.22, 3);
+      ctx.fillStyle = '#18181b';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.24 - legOffset * 0.18, h * 0.76, w * 0.22, h * 0.16, 3);
+      ctx.roundRect(w * 0.54 + legOffset * 0.18, h * 0.76, w * 0.22, h * 0.16, 3);
+      ctx.fill();
+
+      // Calça azul-marinho uniforme
+      ctx.fillStyle = '#1e3a8a';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.22 - legOffset * 0.16, h * 0.56, w * 0.24, h * 0.24, 4);
+      ctx.roundRect(w * 0.54 + legOffset * 0.16, h * 0.56, w * 0.24, h * 0.24, 4);
+      ctx.fill();
+
+      // Alças da mochila azul anil
+      ctx.fillStyle = '#1d4ed8';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.12, h * 0.32, w * 0.18, h * 0.34, 4);
+      ctx.fill();
+
+      // Camisa social branca impecável
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.2, h * 0.32, w * 0.6, h * 0.24, 5);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.stroke();
+
+      // Gravata azul-marinho
+      ctx.fillStyle = '#1d4ed8';
+      ctx.beginPath();
+      ctx.moveTo(w / 2 - 3, h * 0.32);
+      ctx.lineTo(w / 2 + 3, h * 0.32);
+      ctx.lineTo(w / 2 + 4, h * 0.5);
+      ctx.lineTo(w / 2, h * 0.54);
+      ctx.lineTo(w / 2 - 4, h * 0.5);
+      ctx.closePath();
+      ctx.fill();
+
+      // Cabeça jovem
+      ctx.fillStyle = '#a06132';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.2, w * 0.19, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#161c28';
+      ctx.stroke();
+
+      // Cabelo crespo arredondado
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.15, w * 0.2, Math.PI, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case 'mama_quitandeira': {
+      // 3. MAMA QUITANDEIRA (Turbante Amarelo, Vestido Roxo Estampado, Sacolas Verde e Vermelha)
+      // Sandálias rasteiras
+      ctx.fillStyle = '#5c2b0c';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.28 - legOffset * 0.14, h * 0.84, w * 0.18, h * 0.12, 3);
+      ctx.roundRect(w * 0.54 + legOffset * 0.14, h * 0.84, w * 0.18, h * 0.12, 3);
+      ctx.fill();
+
+      // Vestido longo roxo/violeta
+      ctx.fillStyle = '#7e22ce';
+      ctx.beginPath();
+      ctx.moveTo(w * 0.22, h * 0.34);
+      ctx.lineTo(w * 0.78, h * 0.34);
+      ctx.lineTo(w * 0.86, h * 0.84);
+      ctx.lineTo(w * 0.14, h * 0.84);
+      ctx.closePath();
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#581c87';
+      ctx.stroke();
+
+      // Estampa étnica africana laranja/amarela no vestido
+      ctx.fillStyle = '#f59e0b';
+      ctx.fillRect(w * 0.28, h * 0.44, 5, 5);
+      ctx.fillRect(w * 0.48, h * 0.44, 5, 5);
+      ctx.fillRect(w * 0.68, h * 0.44, 5, 5);
+      ctx.fillRect(w * 0.38, h * 0.56, 5, 5);
+      ctx.fillRect(w * 0.58, h * 0.56, 5, 5);
+      ctx.fillRect(w * 0.28, h * 0.68, 5, 5);
+      ctx.fillRect(w * 0.48, h * 0.68, 5, 5);
+      ctx.fillRect(w * 0.68, h * 0.68, 5, 5);
+      ctx.fillRect(w * 0.18, h * 0.78, w * 0.64, 4);
+
+      // Sacola verde na mão direita
+      ctx.fillStyle = '#16a34a';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.08, h * 0.54, 14, 20, 2);
+      ctx.fill();
+      ctx.strokeStyle = '#15803d';
+      ctx.stroke();
+
+      // Sacola vermelha na mão esquerda
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.78, h * 0.54, 14, 20, 2);
+      ctx.fill();
+      ctx.strokeStyle = '#b91c1c';
+      ctx.stroke();
+
+      // Rosto amável
+      ctx.fillStyle = '#8d5524';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.22, w * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#161c28';
+      ctx.stroke();
+
+      // Turbante / lenço amarelo enrolado
+      ctx.fillStyle = '#eab308';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.13, w * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ca8a04';
+      ctx.fillRect(w * 0.28, h * 0.12, w * 0.44, 6);
+      ctx.fillRect(w * 0.32, h * 0.18, w * 0.36, 4);
+      break;
+    }
+
+    case 'executivo_azul': {
+      // 4. EXECUTIVO DE CAMISA AZUL (Camisa Azul-Celeste, Pasta, Calça Preta, Sapatos Castanhos)
+      // Sapatos de couro castanhos
+      ctx.fillStyle = '#78350f';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.26 - legOffset * 0.18, h * 0.78, w * 0.2, h * 0.18, 3);
+      ctx.roundRect(w * 0.54 + legOffset * 0.18, h * 0.78, w * 0.2, h * 0.18, 3);
+      ctx.fill();
+
+      // Calça social preta
+      ctx.fillStyle = '#18181b';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.22 - legOffset * 0.16, h * 0.56, w * 0.24, h * 0.24, 3);
+      ctx.roundRect(w * 0.54 + legOffset * 0.16, h * 0.56, w * 0.24, h * 0.24, 3);
+      ctx.fill();
+
+      // Camisa social azul-celeste com mangas dobradas
+      ctx.fillStyle = '#60a5fa';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.18, h * 0.32, w * 0.64, h * 0.26, 6);
+      ctx.fill();
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = '#2563eb';
+      ctx.stroke();
+
+      // Gola aberta da camisa azul
+      ctx.fillStyle = '#93c5fd';
+      ctx.beginPath();
+      ctx.moveTo(w * 0.38, h * 0.32);
+      ctx.lineTo(w / 2, h * 0.4);
+      ctx.lineTo(w * 0.62, h * 0.32);
+      ctx.fill();
+
+      // Pasta de documentos preta sob o braço esquerdo
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.68, h * 0.44, 16, 20, 2);
+      ctx.fill();
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(w * 0.74, h * 0.52, 4, 3);
+
+      // Relógio metálico no pulso esquerdo
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillRect(w * 0.82, h * 0.46, 5, 4);
+
+      // Cabeça executiva com corte fade limpo
+      ctx.fillStyle = '#824921';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.22, w * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#161c28';
+      ctx.stroke();
+
+      // Cabelo curto fade
+      ctx.fillStyle = '#090d16';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.16, w * 0.21, Math.PI, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+
+    case 'moca_amarela': {
+      // 5. JOVEM MOÇA ESTILOSA (T-shirt Amarela, Jeans com Barra Dobrada, Ténis Brancos, Tranças)
+      // Ténis brancos casuais
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.24 - legOffset * 0.22, h * 0.78, w * 0.22, h * 0.18, 3);
+      ctx.roundRect(w * 0.54 + legOffset * 0.22, h * 0.78, w * 0.22, h * 0.18, 3);
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.stroke();
+
+      // Calça jeans com bainha dobrada no tornozelo
+      ctx.fillStyle = '#3b82f6';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.22 - legOffset * 0.16, h * 0.56, w * 0.24, h * 0.22, 4);
+      ctx.roundRect(w * 0.54 + legOffset * 0.16, h * 0.56, w * 0.24, h * 0.22, 4);
+      ctx.fill();
+      // Bainha dobrada
+      ctx.fillStyle = '#93c5fd';
+      ctx.fillRect(w * 0.22 - legOffset * 0.16, h * 0.74, w * 0.24, 4);
+      ctx.fillRect(w * 0.54 + legOffset * 0.16, h * 0.74, w * 0.24, 4);
+
+      // T-shirt amarela vibrante
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.18, h * 0.32, w * 0.64, h * 0.26, 6);
+      ctx.fill();
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = '#ca8a04';
+      ctx.stroke();
+
+      // Bolsinha tiracolo preta no ombro
+      ctx.strokeStyle = '#18181b';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.3, h * 0.32);
+      ctx.lineTo(w * 0.7, h * 0.56);
+      ctx.stroke();
+      ctx.fillStyle = '#18181b';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.66, h * 0.5, 12, 14, 2);
+      ctx.fill();
+
+      // Rosto
+      ctx.fillStyle = '#925227';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.22, w * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#161c28';
+      ctx.stroke();
+
+      // Longas tranças afro (box braids)
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.16, w * 0.22, Math.PI, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(w * 0.24, h * 0.18, 6, 26);
+      ctx.fillRect(w * 0.7, h * 0.18, 6, 26);
+      break;
+    }
+
+    case 'jovem_verde': {
+      // 6. JOVEM DE MOLETOM VERDE (Moletom Verde com Capuz, Cordões Brancos, Jeans, Ténis)
+      // Ténis brancos
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.24 - legOffset * 0.24, h * 0.78, w * 0.22, h * 0.18, 3);
+      ctx.roundRect(w * 0.54 + legOffset * 0.24, h * 0.78, w * 0.22, h * 0.18, 3);
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.stroke();
+
+      // Jeans clássico
+      ctx.fillStyle = '#2563eb';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.22 - legOffset * 0.18, h * 0.56, w * 0.24, h * 0.24, 4);
+      ctx.roundRect(w * 0.54 + legOffset * 0.18, h * 0.56, w * 0.24, h * 0.24, 4);
+      ctx.fill();
+
+      // Barra branca da camiseta sob o moletom
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(w * 0.22, h * 0.54, w * 0.56, 4);
+
+      // Moletom verde com capuz
+      ctx.fillStyle = '#16a34a';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.16, h * 0.32, w * 0.68, h * 0.26, 8);
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#15803d';
+      ctx.stroke();
+
+      // Bolso canguru frontal e mãos nos bolsos
+      ctx.fillStyle = '#15803d';
+      ctx.beginPath();
+      ctx.roundRect(w * 0.3, h * 0.44, w * 0.4, 12, 4);
+      ctx.fill();
+
+      // Cordões brancos do capuz
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.44, h * 0.34);
+      ctx.lineTo(w * 0.44, h * 0.44);
+      ctx.moveTo(w * 0.56, h * 0.34);
+      ctx.lineTo(w * 0.56, h * 0.44);
+      ctx.stroke();
+
+      // Alças da mochila preta
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(w * 0.16, h * 0.34, 4, 16);
+      ctx.fillRect(w * 0.8, h * 0.34, 4, 16);
+
+      // Rosto
+      ctx.fillStyle = '#8d5524';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.22, w * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#161c28';
+      ctx.stroke();
+
+      // Cabelo crespo volumoso
+      ctx.fillStyle = '#090d16';
+      ctx.beginPath();
+      ctx.arc(w / 2, h * 0.15, w * 0.23, Math.PI, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
   }
 
   ctx.restore();
