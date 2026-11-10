@@ -256,6 +256,10 @@ export interface Taxi {
   position: { x: number; y: number; z: number };
   stopSlot: number; // 0, 1, 2...
   color: string;
+  /** Segundos até começar a partir depois de lotar (respeita a pausa, ao contrário de setTimeout) */
+  departTimer?: number;
+  /** Já avisou o jogador que o táxi vai sair */
+  leavingWarned?: boolean;
 }
 
 export interface NPCLotador {

@@ -8,7 +8,7 @@ export interface SpriteFrame {
   width: number;
   height: number;
   /** Which source image this frame is cropped from. Defaults to 'main' when omitted. */
-  source?: 'main' | 'player1' | 'scenery_obstacles';
+  source?: 'main' | 'player1' | 'scenery_obstacles' | 'npcs';
 }
 
 export const ATLAS_WIDTH = 1448;
@@ -385,3 +385,39 @@ export const ATLAS_FRAMES: Record<string, SpriteFrame> = {
 
 export const ATLAS_PLAYER1_WIDTH = 412;
 export const ATLAS_PLAYER1_HEIGHT = 675;
+
+/**
+ * PASSAGEIROS COM ARTE REAL (npcs_passengers.png, 610x409, fundo transparente).
+ * Caixas medidas pelo canal alpha. Só há 1 pose por personagem, por isso
+ * os frames _walk_N reutilizam a pose base (o andar é animado por código
+ * no GameEngine: bob, inclinação e squash). Substitui os frames
+ * procedurais antigos e os aliases legados (trabalhador, idoso, etc.).
+ */
+const NPC_BOXES: Record<string, [number, number, number, number]> = {
+  comerciante_bege: [18, 70, 91, 251],
+  estudante_gravata: [123, 73, 85, 248],
+  mama_quitandeira: [214, 83, 120, 236],
+  executivo_azul: [341, 69, 86, 253],
+  moca_amarela: [443, 79, 70, 242],
+  jovem_verde: [513, 70, 86, 254],
+};
+
+const NPC_ALIASES: Record<string, string> = {
+  trabalhador: 'comerciante_bege',
+  estudante: 'estudante_gravata',
+  idoso: 'mama_quitandeira',
+  jovem: 'moca_amarela',
+  executivo: 'executivo_azul',
+  impaciente: 'jovem_verde',
+  vip: 'executivo_azul',
+};
+
+function registerNpcFrames(name: string, box: [number, number, number, number]) {
+  const [x, y, width, height] = box;
+  const base: SpriteFrame = { x, y, width, height, source: 'npcs' };
+  ATLAS_FRAMES[`passenger_${name}`] = base;
+  for (let i = 0; i < 4; i++) ATLAS_FRAMES[`passenger_${name}_walk_${i}`] = base;
+}
+
+Object.entries(NPC_BOXES).forEach(([name, box]) => registerNpcFrames(name, box));
+Object.entries(NPC_ALIASES).forEach(([alias, target]) => registerNpcFrames(alias, NPC_BOXES[target]));

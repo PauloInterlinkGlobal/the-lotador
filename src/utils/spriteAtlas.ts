@@ -20,11 +20,13 @@ import * as THREE from 'three';
 import { ATLAS_FRAMES } from './atlasData';
 import player1SpritesheetImg from '../assets/images/player1_spritesheet.png';
 import sceneryObstaclesImg from '../assets/images/objetos-obstaculos.png';
+import npcsPassengersImg from '../assets/images/npcs_passengers.png';
 
 // Registry of real (image-backed) atlas source images.
 const ATLAS_SOURCES: Record<string, string> = {
   player1: player1SpritesheetImg,
   scenery_obstacles: sceneryObstaclesImg,
+  npcs: npcsPassengersImg,
 };
 
 class SpriteAtlasManager {

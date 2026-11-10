@@ -160,70 +160,17 @@ export const SCENERY_PLACEMENTS: Record<string, SceneryPlacement[]> = {
     },
   ],
 
-  // Paragem urbana / Mutamba: composição base, com corredor central livre.
+  // Fallback / Zone aliases
   PARAGEM_URBANA: [],
-
-  // Viana Express: zona de espera mais concentrada à esquerda e comércio à direita.
-  VIANA_EXPRESS: [
-    { id: 'viana_abrigo', type: 'abrigo_paragem', x: -10.5, z: 8.0, scale: 0.95 },
-    { id: 'viana_placa', type: 'paragem_taxi_placa', x: 10.5, z: 1.0 },
-    { id: 'viana_barraca', type: 'barraca_agua_fresca', x: 18.0, z: 6.0, scale: 0.9 },
-    { id: 'viana_banco_1', type: 'banco_madeira', x: -17.0, z: 4.7 },
-    { id: 'viana_banco_2', type: 'banco_madeira', x: -2.5, z: 5.0 },
-    { id: 'viana_arvore_1', type: 'arvore', x: -23.0, z: 9.0 },
-    { id: 'viana_arvore_2', type: 'arvore', x: 23.0, z: 9.0 },
-    { id: 'viana_cone_1', type: 'cone_transito', x: -16.0, z: -1.9 },
-    { id: 'viana_cone_2', type: 'cone_transito', x: -8.0, z: -1.9 },
-    { id: 'viana_cone_3', type: 'cone_transito', x: 8.0, z: -1.9 },
-    { id: 'viana_cone_4', type: 'cone_transito', x: 16.0, z: -1.9 },
-  ],
-
-  // Mercado dos Correios: ambiente de mercado, com abrigo lateral e corredor central aberto.
-  MERCADO_CORREIOS: [
-    { id: 'correios_abrigo', type: 'abrigo_paragem', x: 8.5, z: 8.0 },
-    { id: 'correios_placa', type: 'paragem_taxi_placa', x: -15.5, z: 1.0 },
-    { id: 'correios_barraca', type: 'barraca_agua_fresca', x: -21.0, z: 6.0, scale: 0.9 },
-    { id: 'correios_banco_1', type: 'banco_madeira', x: -10.0, z: 5.0 },
-    { id: 'correios_banco_2', type: 'banco_madeira', x: 16.0, z: 4.8 },
-    { id: 'correios_arvore_1', type: 'arvore', x: -25.0, z: 9.0 },
-    { id: 'correios_arvore_2', type: 'arvore', x: 24.0, z: 9.0 },
-    { id: 'correios_cone_1', type: 'cone_transito', x: -18.0, z: -1.9 },
-    { id: 'correios_cone_2', type: 'cone_transito', x: -6.0, z: -1.9 },
-    { id: 'correios_cone_3', type: 'cone_transito', x: 6.0, z: -1.9 },
-    { id: 'correios_cone_4', type: 'cone_transito', x: 18.0, z: -1.9 },
-  ],
-
-  // Talatona: composição mais espaçada e simétrica, com duas áreas de descanso.
-  TALATONA_NOBRE: [
-    { id: 'talatona_abrigo', type: 'abrigo_paragem', x: -1.5, z: 8.5, scale: 1.05 },
-    { id: 'talatona_placa', type: 'paragem_taxi_placa', x: 20.0, z: 1.0 },
-    { id: 'talatona_barraca', type: 'barraca_agua_fresca', x: -21.0, z: 6.0, scale: 0.85 },
-    { id: 'talatona_banco_1', type: 'banco_madeira', x: -14.0, z: 4.7 },
-    { id: 'talatona_banco_2', type: 'banco_madeira', x: 13.0, z: 4.7 },
-    { id: 'talatona_arvore_1', type: 'arvore', x: -25.0, z: 9.0 },
-    { id: 'talatona_arvore_2', type: 'arvore', x: 25.0, z: 9.0 },
-    { id: 'talatona_cone_1', type: 'cone_transito', x: -16.0, z: -1.9 },
-    { id: 'talatona_cone_2', type: 'cone_transito', x: -8.0, z: -1.9 },
-    { id: 'talatona_cone_3', type: 'cone_transito', x: 8.0, z: -1.9 },
-    { id: 'talatona_cone_4', type: 'cone_transito', x: 16.0, z: -1.9 },
-  ],
-
-  // Samba Terminal: abrigo comprido, placa lateral e comércio junto à extremidade.
-  SAMBA_TERMINAL: [
-    { id: 'samba_abrigo', type: 'abrigo_paragem', x: 10.0, z: 8.0 },
-    { id: 'samba_placa', type: 'paragem_taxi_placa', x: -19.0, z: 1.0 },
-    { id: 'samba_barraca', type: 'barraca_agua_fresca', x: 21.0, z: 5.8, scale: 0.9 },
-    { id: 'samba_banco_1', type: 'banco_madeira', x: -12.0, z: 4.8 },
-    { id: 'samba_banco_2', type: 'banco_madeira', x: 1.0, z: 4.8 },
-    { id: 'samba_arvore_1', type: 'arvore', x: -25.0, z: 9.0 },
-    { id: 'samba_arvore_2', type: 'arvore', x: 25.0, z: 9.0 },
-    { id: 'samba_cone_1', type: 'cone_transito', x: -16.0, z: -1.9 },
-    { id: 'samba_cone_2', type: 'cone_transito', x: -8.0, z: -1.9 },
-    { id: 'samba_cone_3', type: 'cone_transito', x: 8.0, z: -1.9 },
-    { id: 'samba_cone_4', type: 'cone_transito', x: 16.0, z: -1.9 },
-  ],
+  VIANA_EXPRESS: [],
+  MERCADO_CORREIOS: [],
+  TALATONA_NOBRE: [],
+  SAMBA_TERMINAL: [],
 };
 
-// The base layout remains available for the first level only. Each named map owns
-// its own placement array so map changes cannot silently reuse Mutamba coordinates.
+// Aliases share the rich Level 1 setup
 SCENERY_PLACEMENTS.PARAGEM_URBANA = SCENERY_PLACEMENTS.LEVEL_1;
+SCENERY_PLACEMENTS.VIANA_EXPRESS = SCENERY_PLACEMENTS.LEVEL_1;
+SCENERY_PLACEMENTS.MERCADO_CORREIOS = SCENERY_PLACEMENTS.LEVEL_1;
+SCENERY_PLACEMENTS.TALATONA_NOBRE = SCENERY_PLACEMENTS.LEVEL_1;
+SCENERY_PLACEMENTS.SAMBA_TERMINAL = SCENERY_PLACEMENTS.LEVEL_1;

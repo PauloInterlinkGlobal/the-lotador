@@ -30,6 +30,43 @@ import { canPassengerFollow } from '../utils/gameLogic';
 import { SceneryObstacleManager } from './SceneryObstacleManager';
 import { sceneryAtlasManager } from '../utils/sceneryAtlas';
 
+/** Altura (em unidades do mundo) dos passageiros. A largura vem do aspecto real do frame. */
+export const PASSENGER_WORLD_HEIGHT = 2.2;
+
+/** Converte QUALQUER tipo de passageiro (novo ou legado) na chave de sprite correta. */
+export function passengerSpriteKey(type: string): string {
+  switch (type) {
+    case 'COMERCIANTE_BEGE':
+    case 'TRABALHADOR':
+    case 'NORMAL':
+      return 'passenger_comerciante_bege';
+    case 'ESTUDANTE_GRAVATA':
+    case 'ESTUDANTE':
+      return 'passenger_estudante_gravata';
+    case 'MAMA_ROXO':
+    case 'IDOSO':
+    case 'OBSERVADOR':
+      return 'passenger_mama_quitandeira';
+    case 'EXECUTIVO_AZUL':
+    case 'EXECUTIVO':
+    case 'EXIGENTE':
+    case 'VIP':
+    case 'ESPECIAL':
+      return 'passenger_executivo_azul';
+    case 'MOCA_AMARELA':
+    case 'JOVEM':
+    case 'INDECISO':
+      return 'passenger_moca_amarela';
+    case 'JOVEM_VERDE':
+    case 'IMPACIENTE':
+    case 'APRESSADO':
+    case 'CORRERIA':
+      return 'passenger_jovem_verde';
+    default:
+      return 'passenger_comerciante_bege';
+  }
+}
+
 export interface GameEngineCallbacks {
   onScoreUpdate: (kz: number, xp: number, combo: number) => void;
   onTaxiLoaded: (taxi: Taxi, reward: number, xp: number) => void;
@@ -1546,6 +1583,10 @@ export class GameEngine {
       sprite.scale.set(worldHeight * aspect, worldHeight, 1);
     } else if (spriteFrameName?.startsWith('obstacle_')) {
       sprite.scale.set(1.6, 2.4, 1);
+    } else if (spriteFrameName?.startsWith('passenger_')) {
+      const { width: fw, height: fh } = spriteAtlasManager.getFrameSize(frameKey);
+      const aspect = fh > 0 ? fw / fh : 0.4;
+      sprite.scale.set(PASSENGER_WORLD_HEIGHT * aspect, PASSENGER_WORLD_HEIGHT, 1);
     } else {
       sprite.scale.set(1.4, 2.2, 1);
     }
@@ -1814,6 +1855,21 @@ export class GameEngine {
     return [...leftList, ...rightList];
   }
 
+  /** Rotas que realmente podem existir na paragem neste modo/nível. */
+  private getAllowedRoutes(): RouteType[] {
+    if (this.isTutorial) return ['VIANA'];
+    const slots = this.levelConfig ? (this.levelConfig.taxi_slots_count ?? 3) : 3;
+    if (slots <= 1) return ['VIANA'];
+    if (slots === 2) return ['VIANA', 'CENTRO'];
+    return ['VIANA', 'CACUACO', 'KILAMBA'];
+  }
+
+  /** Rota fixa de cada baia (coerente com o nº de baias do nível). */
+  private routeForSlot(slotIndex: number): RouteType {
+    const allowed = this.getAllowedRoutes();
+    return allowed[Math.min(slotIndex, allowed.length - 1)];
+  }
+
   public spawnTaxi(forcedRoute?: RouteType) {
     const maxSlots = this.levelConfig ? (this.levelConfig.taxi_slots_count ?? 3) : 3;
     const availableSlots = this.taxiSlots.slice(0, maxSlots);
@@ -1822,21 +1878,23 @@ export class GameEngine {
 
     const routes: RouteType[] = ['VIANA', 'CACUACO', 'KILAMBA', 'TALATONA', 'CENTRO', 'CAMAMA'];
     const slot = this.taxiSlots[emptySlotIndex];
-    const route = forcedRoute || slot.defaultRoute || routes[Math.floor(Math.random() * routes.length)];
+    const route = forcedRoute || this.routeForSlot(emptySlotIndex) || slot.defaultRoute || routes[Math.floor(Math.random() * routes.length)];
     const id = 'taxi_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
 
     slot.occupied = true;
     slot.taxiId = id;
 
     const extraCap = Math.min(4, this.playerStats.upgradeTaxiCapacity || 0);
+    // Níveis iniciais: táxi espera mais (110s); desce até 70s nos níveis altos
+    const taxiWaitSeconds = Math.max(70, 110 - ((this.levelConfig?.level_number || 1) - 1) * 4);
     const taxi: Taxi = {
       id,
       type: 'NORMAL',
       route,
       capacity: 4 + extraCap,
       currentPassengers: 0,
-      maxWaitTime: 90,
-      remainingWaitTime: 90,
+      maxWaitTime: taxiWaitSeconds,
+      remainingWaitTime: taxiWaitSeconds,
       baseReward: 120,
       state: 'ARRIVING',
       position: { x: slot.x + 20, y: 0.0, z: slot.z }, // Starts offscreen right, wheels on road level (y=0)
@@ -2056,8 +2114,15 @@ export class GameEngine {
     const activeTaxiRoutes = this.taxis
       .filter((t) => t.state === 'WAITING' || t.state === 'LOADING')
       .map((t) => t.route);
-    const fallbackRoutes: RouteType[] = ['VIANA', 'CACUACO', 'KILAMBA', 'TALATONA', 'CENTRO', 'CAMAMA'];
-    const candidateRoutes = activeTaxiRoutes.length > 0 && Math.random() < 0.75 ? activeTaxiRoutes : fallbackRoutes;
+    // Só nascem passageiros para rotas que existem neste nível (antes ~12% pediam
+    // TALATONA/CENTRO/CAMAMA sem nunca haver táxi → recusa eterna).
+    const fallbackRoutes: RouteType[] = this.getAllowedRoutes();
+    let candidateRoutes = activeTaxiRoutes.length > 0 && Math.random() < 0.75 ? activeTaxiRoutes : fallbackRoutes;
+    // Equilíbrio: evita >5 passageiros à espera da mesma rota (um táxi leva ~4)
+    const waitingPerRoute = (r: RouteType) =>
+      this.passengers.filter((q) => q.destination === r && (q.state === 'WAITING' || q.state === 'IDLE' || q.state === 'SEARCHING')).length;
+    const notSaturated = candidateRoutes.filter((r) => waitingPerRoute(r) < 5);
+    if (notSaturated.length > 0) candidateRoutes = notSaturated;
     const route = candidateRoutes[Math.floor(Math.random() * candidateRoutes.length)];
 
     // 6 Personagens da imagem de referência de Luanda:
@@ -2152,30 +2217,32 @@ export class GameEngine {
     }
 
     const id = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-    // Spawn only inside the passenger waiting strip. Reject scenery, player and
-    // existing passenger overlaps so nobody appears inside a bench, stall or crowd.
-    let startX = 0;
-    let startZ = 4.5;
-    let validSpawn = false;
-    for (let attempts = 0; attempts < 24; attempts++) {
-      const candidateX = -19 + Math.random() * 38;
-      const candidateZ = 2.0 + Math.random() * 5.8;
-      const blockedByScenery = this.sceneryObstacleManager
-        ? !this.sceneryObstacleManager.isClearForSpawn(candidateX, candidateZ, 1.35)
-        : false;
-      const blockedByPlayer = Math.hypot(candidateX - this.playerPos.x, candidateZ - this.playerPos.z) < 1.6;
-      const blockedByPassenger = this.passengers.some(
-        (existing) => Math.hypot(candidateX - existing.position.x, candidateZ - existing.position.z) < 1.45
-      );
-      if (!blockedByScenery && !blockedByPlayer && !blockedByPassenger) {
-        startX = candidateX;
-        startZ = candidateZ;
-        validSpawn = true;
-        break;
-      }
+    // Zonas de espera naturais: bancos, abrigo, placa, barraca de água e meio do passeio.
+    const waitingZones = [
+      { x: -9.5, z: 3.0 }, // frente do banco 1
+      { x: 5.5, z: 3.0 },  // frente do banco 2
+      { x: -4.0, z: 5.6 }, // junto ao abrigo
+      { x: -13.5, z: 2.0 }, // junto à placa
+      { x: 12.0, z: 3.6 },  // junto à barraca de água
+      { x: 0.0, z: 3.4 },   // meio do passeio
+    ];
+    const pickSpawn = () => {
+      const zone = waitingZones[Math.floor(Math.random() * waitingZones.length)];
+      return {
+        x: Math.max(-18, Math.min(18, zone.x + (Math.random() - 0.5) * 3.2)),
+        z: Math.max(2, Math.min(9, zone.z + (Math.random() - 0.5) * 1.8)),
+      };
+    };
+    const isSpawnOk = (x: number, z: number) =>
+      (!this.sceneryObstacleManager || this.sceneryObstacleManager.isClearForSpawn(x, z, 1.4)) &&
+      Math.hypot(x - this.playerPos.x, z - this.playerPos.z) >= 3.5 &&
+      !this.passengers.some((q) => Math.hypot(q.position.x - x, q.position.z - z) < 1.4);
+    let { x: startX, z: startZ } = pickSpawn();
+    let attempts = 0;
+    while (!isSpawnOk(startX, startZ) && attempts < 16) {
+      ({ x: startX, z: startZ } = pickSpawn());
+      attempts++;
     }
-    // Do not force an invalid spawn when the waiting area is temporarily crowded.
-    if (!validSpawn) return;
 
     const passenger: Passenger = {
       id,
@@ -2192,7 +2259,7 @@ export class GameEngine {
       targetPos: { x: startX + (Math.random() - 0.5) * 4, y: 0.6, z: startZ + (Math.random() - 0.5) * 2 },
       followedBy: null,
       assignedTaxiId: null,
-      color: '#' + Math.floor(Math.random() * 16777215).toString(16),
+      color: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'),
       gender: Math.random() > 0.5 ? 'M' : 'F',
       animFrame: 0,
       animTimer: 0,
@@ -2209,8 +2276,11 @@ export class GameEngine {
       const spriteObj = pMesh.children.find((c) => c instanceof THREE.Sprite) as THREE.Sprite;
       if (spriteObj) {
         spriteObj.material.map = spriteAtlasManager.getTexture(spriteFrameName);
+        spriteObj.material.rotation = 0;
         spriteObj.material.needsUpdate = true;
       }
+      pMesh.userData.currentFrameKey = spriteFrameName;
+      pMesh.userData.baseFrameKey = spriteFrameName;
       pMesh.visible = true;
     }
 
@@ -2366,8 +2436,25 @@ export class GameEngine {
     return false;
   }
 
-  private onTaxiFilled(taxi: Taxi) {
+  private onTaxiFilled(taxi: Taxi, byRival = false) {
     taxi.state = 'FULL';
+    // Parte 1.2s depois de lotar (timer do jogo: respeita pausa, ao contrário do setTimeout antigo)
+    taxi.departTimer = 1.2;
+
+    if (byRival) {
+      // Antes: o último passageiro de um rival dava ao JOGADOR o bónus + combo + objetivo de "lotar".
+      // Agora o rival "rouba" a lotação: sem bónus e o combo do jogador quebra.
+      const roofPos = { x: taxi.position.x, y: 2.3, z: taxi.position.z };
+      this.callbacks.onFloatingText(`😤 Rival lotou o táxi de ${taxi.route}!`, '#ef4444', roofPos);
+      soundManager.playPassengerRefusal();
+      if (this.combo > 1) {
+        this.combo = 1;
+        this.comboTimer = 0;
+        this.callbacks.onScoreUpdate(this.matchKz, this.matchXp, this.combo);
+      }
+      return;
+    }
+
     this.taxisLoadedCount++;
     this.combo = Math.min(this.combo + 1, 5);
     this.comboTimer = 10; // 10 seconds to maintain combo
@@ -2392,11 +2479,6 @@ export class GameEngine {
     // Particles on taxi filled
     this.spawnSpriteParticle('effect_taxi_full', roofPos, 2.6, 3.0);
     this.spawnSpriteParticle('effect_combo', roofPos, 2.2, 2.5);
-
-    // Free slot after departure animation
-    setTimeout(() => {
-      taxi.state = 'DEPARTING';
-    }, 1200);
   }
 
   public updateInputs(dir: { x: number; z: number }, isRunning: boolean) {
@@ -2835,12 +2917,22 @@ export class GameEngine {
       if (distToTarget < 0.6) {
         obs.currentPatrolIdx = (obs.currentPatrolIdx + 1) % obs.patrolPoints.length;
       } else {
-        const velX = (dx / distToTarget) * obs.speed;
-        const velZ = (dz / distToTarget) * obs.speed;
+        let velX = (dx / distToTarget) * obs.speed;
+        let velZ = (dz / distToTarget) * obs.speed;
+
+        // As zungueiras/fiscais atravessavam bancos, abrigo e barraca: agora contornam o cenário
+        if (this.sceneryObstacleManager) {
+          const steered = this.sceneryObstacleManager.steerAroundObstacles(obs.position, { x: velX, z: velZ }, 1.1);
+          velX = steered.x;
+          velZ = steered.z;
+        }
 
         obs.position.x += velX * delta;
         obs.position.z += velZ * delta;
-        obs.facingLeft = velX < 0;
+        if (this.sceneryObstacleManager) {
+          this.sceneryObstacleManager.resolveSlidingCollision(obs.position, 0.5);
+        }
+        if (Math.abs(velX) > 0.05) obs.facingLeft = velX < 0;
         obs.animDistance = (obs.animDistance || 0) + Math.hypot(velX, velZ) * delta;
       }
 
@@ -3111,11 +3203,28 @@ export class GameEngine {
           }
         }
 
-        // AI Logic: Find nearest unserviced passenger
-        if (!npc.targetPassengerId) {
-          const target = this.passengers.find((p) => p.state === 'WAITING' || p.state === 'SEARCHING' || p.state === 'IDLE');
-          if (target) {
-            npc.targetPassengerId = target.id;
+        // AI Logic: escolhe o passageiro LIVRE MAIS PRÓXIMO cuja rota tem táxi com lugar,
+        // e que nenhum outro rival já esteja a perseguir (antes: sempre o 1.º da lista,
+        // todos os rivais corriam para o mesmo, e podiam apanhar quem não tinha táxi → bloqueio).
+        if (!npc.targetPassengerId && !npc.followingPassengerId) {
+          const seatsLeft = (route: string) =>
+            this.taxis
+              .filter((t) => t.route === route && (t.state === 'WAITING' || t.state === 'LOADING'))
+              .reduce((acc, t) => acc + (t.capacity - t.currentPassengers), 0);
+          let best: Passenger | null = null;
+          let bestDist = Infinity;
+          for (const p of this.passengers) {
+            if (p.state !== 'WAITING' && p.state !== 'SEARCHING' && p.state !== 'IDLE') continue;
+            if (seatsLeft(p.destination) <= 0) continue;
+            if (this.npcs.some((o) => o.id !== npc.id && (o.targetPassengerId === p.id || o.followingPassengerId === p.id))) continue;
+            const d = Math.hypot(p.position.x - npc.position.x, p.position.z - npc.position.z);
+            if (d < bestDist) {
+              bestDist = d;
+              best = p;
+            }
+          }
+          if (best) {
+            npc.targetPassengerId = best.id;
             npc.state = 'CHASING';
           }
         }
@@ -3155,9 +3264,16 @@ export class GameEngine {
           const p = this.passengers.find((p) => p.id === npc.followingPassengerId);
           if (p) {
             const matchingTaxi = this.taxis.find(
-              (t) => t.route === p.destination && t.state === 'WAITING' && t.currentPassengers < t.capacity
+              (t) => t.route === p.destination && (t.state === 'WAITING' || t.state === 'LOADING') && t.currentPassengers < t.capacity
             );
-            if (matchingTaxi) {
+            if (!matchingTaxi) {
+              // O táxi saiu/encheu: o rival larga o passageiro, que volta a esperar
+              p.state = 'WAITING';
+              p.followedBy = null;
+              p.patience = Math.max(p.patience, p.maxPatience * 0.6);
+              npc.followingPassengerId = null;
+              npc.state = 'IDLE';
+            } else {
               const dx = matchingTaxi.position.x - npc.position.x;
               const dz = matchingTaxi.position.z - npc.position.z;
               const dist = Math.hypot(dx, dz);
@@ -3174,10 +3290,14 @@ export class GameEngine {
                 npc.state = 'IDLE';
 
                 if (matchingTaxi.currentPassengers >= matchingTaxi.capacity) {
-                  this.onTaxiFilled(matchingTaxi);
+                  this.onTaxiFilled(matchingTaxi, true);
                 }
               }
             }
+          } else {
+            // Passageiro já não existe (ex.: removido) → rival liberta-se
+            npc.followingPassengerId = null;
+            npc.state = 'IDLE';
           }
         }
       }
@@ -3233,7 +3353,7 @@ export class GameEngine {
         frameKey = `${npcTypeKey}_walk_${frameIndex}`;
 
         const stepPhase = (npc.animDistance / strideLength) * Math.PI;
-        yBob = Math.abs(Math.sin(stepPhase)) * 0.07;
+        yBob = Math.abs(Math.sin(stepPhase)) * 0.09;
         shadowScale = 1.0 - yBob * 0.7;
         shadowOpacity = 0.3 - yBob * 0.12;
       } else {
@@ -3278,20 +3398,7 @@ export class GameEngine {
         (c) => c instanceof THREE.Mesh && c.geometry instanceof THREE.CircleGeometry
       )) as THREE.Mesh;
 
-      const pTypeKey = 
-        p.type === 'TRABALHADOR' ? 'passenger_trabalhador' :
-        p.type === 'ESTUDANTE' ? 'passenger_estudante' :
-        p.type === 'IDOSO' ? 'passenger_idoso' :
-        p.type === 'JOVEM' ? 'passenger_jovem' :
-        p.type === 'EXECUTIVO' ? 'passenger_executivo' :
-        p.type === 'IMPACIENTE' ? 'passenger_impaciente' :
-        p.type === 'VIP' ? 'passenger_vip' :
-        p.type === 'APRESSADO' || p.type === 'CORRERIA' ? 'passenger_impaciente' :
-        p.type === 'INDECISO' ? 'passenger_jovem' :
-        p.type === 'OBSERVADOR' ? 'passenger_idoso' :
-        p.type === 'EXIGENTE' ? 'passenger_executivo' :
-        p.type === 'ESPECIAL' ? 'passenger_vip' :
-        'passenger_trabalhador';
+      const pTypeKey = passengerSpriteKey(p.type);
 
       let targetVelX = 0;
       let targetVelZ = 0;
@@ -3323,6 +3430,25 @@ export class GameEngine {
               this.boardPassenger(p, matchingTaxi);
               continue;
             }
+          }
+        }
+
+        // Se o táxi desta rota já partiu (ou encheu) e não há outro a chegar, o passageiro
+        // deixa de seguir e volta a esperar (antes ficava preso a seguir o jogador para sempre).
+        if (p.followedBy === 'PLAYER') {
+          const routeStillServed = this.taxis.some(
+            (t) =>
+              t.route === p.destination &&
+              (t.state === 'ARRIVING' || t.state === 'WAITING' || t.state === 'LOADING') &&
+              t.currentPassengers < t.capacity
+          );
+          if (!routeStillServed) {
+            p.state = 'WAITING';
+            p.followedBy = null;
+            p.assignedTaxiId = null;
+            p.patience = Math.max(p.patience, p.maxPatience * 0.6);
+            this.callbacks.onFloatingText('🚐 O táxi saiu! Espera pelo próximo', '#f59e0b', p.position);
+            continue;
           }
         }
 
@@ -3392,7 +3518,7 @@ export class GameEngine {
         frameKey = `${pTypeKey}_walk_${frameIndex}`;
 
         const stepPhase = (p.animDistance / strideLength) * Math.PI;
-        yBob = Math.abs(Math.sin(stepPhase)) * 0.07;
+        yBob = Math.abs(Math.sin(stepPhase)) * 0.09;
         shadowScale = 1.0 - yBob * 0.7;
         shadowOpacity = 0.3 - yBob * 0.12;
       } else {
@@ -3411,8 +3537,17 @@ export class GameEngine {
           }
           pMesh.userData.currentFrameKey = frameKey;
         }
-        spriteObj.scale.set(p.facingLeft ? -1.4 : 1.4, 2.2, 1);
-        spriteObj.position.y = 1.1 + yBob;
+        // Largura pelo aspecto real do frame (sem esticar a arte)
+        const fsize = spriteAtlasManager.getFrameSize(pTypeKey);
+        const aspect = fsize.height > 0 ? fsize.width / fsize.height : 0.4;
+        const w = PASSENGER_WORLD_HEIGHT * aspect;
+        // Só há 1 pose por passageiro: o andar é feito com bob + balanço + squash
+        const stepPhase = isMoving ? ((p.animDistance || 0) / 0.42) * Math.PI : 0;
+        const sway = isMoving ? Math.sin(stepPhase) * 0.07 : 0;
+        const squash = isMoving ? 1 - Math.abs(Math.sin(stepPhase)) * 0.035 : 1;
+        spriteObj.material.rotation = sway;
+        spriteObj.scale.set(p.facingLeft ? -w : w, PASSENGER_WORLD_HEIGHT * squash, 1);
+        spriteObj.position.y = PASSENGER_WORLD_HEIGHT / 2 + yBob;
       }
 
       if (shadowMesh) {
@@ -3486,6 +3621,35 @@ export class GameEngine {
 
       const slot = this.taxiSlots[t.stopSlot];
 
+      // Táxi cheio: pequena pausa e arranca
+      if (t.state === 'FULL') {
+        t.departTimer = (t.departTimer ?? 1.2) - delta;
+        if (t.departTimer <= 0) t.state = 'DEPARTING';
+      }
+
+      // Regra nova: o táxi não espera para sempre (remainingWaitTime nunca era decrementado).
+      // Se não encher a tempo, parte; a baia liberta e chega outro (outra rota nas baias 2/3).
+      if (!this.isTutorial && (t.state === 'WAITING' || t.state === 'LOADING')) {
+        t.remainingWaitTime -= delta;
+        if (t.remainingWaitTime <= 10 && !t.leavingWarned) {
+          t.leavingWarned = true;
+          this.callbacks.onFloatingText(
+            `⏳ Táxi de ${t.route} vai sair!`,
+            '#f59e0b',
+            { x: t.position.x, y: 2.3, z: t.position.z }
+          );
+          soundManager.playHorn();
+        }
+        if (t.remainingWaitTime <= 0) {
+          t.state = 'DEPARTING';
+          this.callbacks.onFloatingText(
+            t.currentPassengers > 0 ? `🚐 ${t.route} partiu com ${t.currentPassengers}/${t.capacity}` : `🚐 ${t.route} partiu vazio`,
+            '#94a3b8',
+            { x: t.position.x, y: 2.3, z: t.position.z }
+          );
+        }
+      }
+
       if (t.state === 'ARRIVING') {
         // Drive in from right to slot position
         if (t.position.x > slot.x) {
@@ -3534,13 +3698,8 @@ export class GameEngine {
     // Spawn new passengers periodically (disabled in tutorial to prevent uncontrolled passenger count inflation)
     if (!this.isTutorial) {
       this.passengerSpawnTimer += delta;
-      // Level data controls the normal cadence. A short emergency interval keeps
-      // the stop playable when the queue is nearly empty without flooding it.
-      const levelNumber = this.levelConfig?.level_number ?? this.playerStats.level ?? 1;
-      const progressionInterval = Math.max(2.4, 5.2 - Math.max(0, levelNumber - 1) * 0.16);
-      const configuredInterval = this.levelConfig?.passenger_spawn_interval_seconds ?? progressionInterval;
-      const queuePressureMultiplier = this.passengers.length < 4 ? 0.68 : this.isRushHour ? 0.82 : 1;
-      const spawnRate = Math.max(1.35, configuredInterval * queuePressureMultiplier);
+      // Faster replenishment if count drops below 4, preventing dead paragens
+      const spawnRate = this.passengers.length < 4 ? 1.5 : (this.isRushHour ? 2.5 : 5.0);
       if (this.passengerSpawnTimer >= spawnRate) {
         this.passengerSpawnTimer = 0;
         this.spawnPassenger();

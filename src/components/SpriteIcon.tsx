@@ -7,6 +7,7 @@ import React, { useEffect, useRef } from 'react';
 import { ATLAS_FRAMES } from '../utils/atlasData';
 import spritesheetImg from '../assets/images/lotador_spritesheet_1786361082992.webp';
 import player1SpritesheetImg from '../assets/images/player1_spritesheet.png';
+import npcsPassengersImg from '../assets/images/npcs_passengers.png';
 
 import { drawFallbackSprite } from '../utils/spriteAtlas';
 
@@ -60,6 +61,19 @@ export const SpriteIcon: React.FC<SpriteIconProps> = ({ name, className = '', st
 
     const ctx = canvas.getContext('2d', { willReadFrequently: false });
     if (!ctx) return;
+
+    // Passageiros com arte real (atlas 'npcs'): desenha o recorte da imagem, não o vetor antigo
+    if (frame.source === 'npcs') {
+      const draw = () => {
+        const img = imageCache[npcsPassengersImg];
+        if (!img || !img.complete || !canvasRef.current) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, frame.x, frame.y, frame.width, frame.height, 0, 0, canvas.width, canvas.height);
+      };
+      const img = getSharedImage(npcsPassengersImg, draw);
+      if (img.complete) draw();
+      return;
+    }
 
     // For passenger sprites, obstacles, effects and UI icons, use vector fallback renderer for 100% crispness
     if (name.startsWith('passenger_') || name.startsWith('obstacle_') || name.startsWith('effect_') || name.startsWith('ui_')) {
