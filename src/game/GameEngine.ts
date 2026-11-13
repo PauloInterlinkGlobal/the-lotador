@@ -1708,34 +1708,23 @@ export class GameEngine {
   }
 
   /**
-   * Attaches or updates the 3D World Space Canvas Badge billboard on a passenger mesh.
+   * Limpa qualquer sprite 3D legado de legenda no mesh do passageiro.
+   * As legendas de destino são geridas unicamente pelo WorldSpaceCanvas para evitar legendas duplicadas.
    */
   private attachOrUpdatePassengerBadge(
     pMesh: THREE.Group,
     destination: RouteType,
     status: 'NORMAL' | 'FOLLOWING' | 'REFUSED' = 'NORMAL'
   ) {
-    let badgeSprite = pMesh.userData.badgeSprite as THREE.Sprite | undefined;
-    const tex = GameEngine.getPassengerBadgeTexture(destination, status);
-
-    if (!badgeSprite) {
-      const mat = new THREE.SpriteMaterial({
-        map: tex,
-        transparent: true,
-        depthTest: false,
-      });
-      badgeSprite = new THREE.Sprite(mat);
-      badgeSprite.name = 'passengerDestinationBadge';
-      badgeSprite.scale.set(1.4, 0.42, 1);
-      badgeSprite.position.set(0, 2.35, 0);
-      pMesh.add(badgeSprite);
-      pMesh.userData.badgeSprite = badgeSprite;
-    } else {
-      if (badgeSprite.material.map !== tex) {
-        badgeSprite.material.map = tex;
-        badgeSprite.material.needsUpdate = true;
-      }
-      badgeSprite.visible = true;
+    const existingBadge = pMesh.getObjectByName('passengerDestinationBadge');
+    if (existingBadge) {
+      existingBadge.visible = false;
+      pMesh.remove(existingBadge);
+    }
+    if (pMesh.userData.badgeSprite) {
+      (pMesh.userData.badgeSprite as THREE.Object3D).visible = false;
+      pMesh.remove(pMesh.userData.badgeSprite as THREE.Object3D);
+      pMesh.userData.badgeSprite = undefined;
     }
     pMesh.userData.badgeDestination = destination;
     pMesh.userData.badgeStatus = status;
@@ -3567,35 +3556,6 @@ export class GameEngine {
         pMesh.rotation.z = 0;
       }
 
-      // World Space Canvas 3D Badge state update
-      const badgeStatus: 'NORMAL' | 'FOLLOWING' | 'REFUSED' =
-        p.refusalTimer && p.refusalTimer > 0
-          ? 'REFUSED'
-          : p.state === 'FOLLOWING'
-          ? 'FOLLOWING'
-          : 'NORMAL';
-
-      let badgeSprite = pMesh.userData.badgeSprite as THREE.Sprite | undefined;
-      if (!badgeSprite) {
-        this.attachOrUpdatePassengerBadge(pMesh, p.destination, badgeStatus);
-        badgeSprite = pMesh.userData.badgeSprite as THREE.Sprite | undefined;
-      } else if (
-        pMesh.userData.badgeDestination !== p.destination ||
-        pMesh.userData.badgeStatus !== badgeStatus
-      ) {
-        this.attachOrUpdatePassengerBadge(pMesh, p.destination, badgeStatus);
-      }
-
-      if (badgeSprite) {
-        badgeSprite.position.y = 2.35 + Math.sin(this.elapsedTime * 3 + i) * 0.04;
-        if (badgeStatus === 'REFUSED') {
-          const pulse = 1.0 + Math.sin(this.elapsedTime * 16) * 0.12;
-          badgeSprite.scale.set(1.45 * pulse, 0.44 * pulse, 1);
-        } else {
-          badgeSprite.scale.set(1.4, 0.42, 1);
-        }
-      }
-
       pMesh.position.set(p.position.x, 0.6, p.position.z);
     }
   }
@@ -3605,9 +3565,10 @@ export class GameEngine {
     if (mesh) {
       mesh.visible = false;
       mesh.rotation.set(0, 0, 0);
-      const badgeSprite = mesh.userData.badgeSprite as THREE.Sprite | undefined;
+      const badgeSprite = mesh.getObjectByName('passengerDestinationBadge');
       if (badgeSprite) {
         badgeSprite.visible = false;
+        mesh.remove(badgeSprite);
       }
       this.passengerMeshPool.push(mesh);
       this.passengerMeshes.delete(p.id);
