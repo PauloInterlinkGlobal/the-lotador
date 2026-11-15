@@ -135,15 +135,7 @@ export const InGameObjectivesHUD: React.FC<InGameObjectivesHUDProps> = ({
               />
             </div>
 
-            {/* Sub-label for single/dual layout to give more context */}
-            {objectives.length <= 2 && (
-              <div className="mt-1 flex justify-between items-center text-[8px] font-work text-slate-300 truncate">
-                <span className="truncate">{obj.description}</span>
-                {isComplete && (
-                  <span className="font-space font-black text-[#4caf50] uppercase ml-1">FEITO!</span>
-                )}
-              </div>
-            )}
+
           </div>
         );
       })}
