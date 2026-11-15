@@ -56,7 +56,6 @@ export default function App() {
   const [stamina, setStamina] = useState(100);
   const [maxStamina, setMaxStamina] = useState(100);
   const [timerSeconds, setTimerSeconds] = useState(180); // 3-minute match
-  const [isRushHour, setIsRushHour] = useState(false);
   const [taxis, setTaxis] = useState<Taxi[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [activeDispute, setActiveDispute] = useState<PassengerDispute | null>(null);
@@ -296,7 +295,6 @@ export default function App() {
         completed: false,
       }))
     );
-    setIsRushHour(false);
     setParagemEvent(null);
     setActiveDispute(null);
     setIsPaused(false);
@@ -373,7 +371,7 @@ export default function App() {
               );
             },
             onFloatingText: () => {},
-            onRushHourState: (isRush) => setIsRushHour(isRush),
+            onRushHourState: () => {},
             onStaminaChange: (cur, max) => {
               const roundedCur = Math.round(cur);
               const roundedMax = Math.round(max);
