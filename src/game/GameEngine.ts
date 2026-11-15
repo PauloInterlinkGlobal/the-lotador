@@ -440,11 +440,11 @@ export class GameEngine {
   private callRadiusMesh!: THREE.Mesh;
   private callPulseTimer = 0;
 
-  // 3 Baias de Táxi Fixas no Topo da Rua (Baia 1: Viana, Baia 2: Cacuaco, Baia 3: Kilamba)
+  // 3 PARAGEMs de Táxi Fixas no Topo da Rua (PARAGEM 1: Viana, PARAGEM 2: Cacuaco, PARAGEM 3: Kilamba)
   public taxiSlots = [
-    { id: 0, bayName: 'BAIA 1', defaultRoute: 'VIANA' as RouteType, x: -9, z: -4, occupied: false, taxiId: null as string | null },
-    { id: 1, bayName: 'BAIA 2', defaultRoute: 'CACUACO' as RouteType, x: 0, z: -4, occupied: false, taxiId: null as string | null },
-    { id: 2, bayName: 'BAIA 3', defaultRoute: 'KILAMBA' as RouteType, x: 9, z: -4, occupied: false, taxiId: null as string | null },
+    { id: 0, bayName: 'PARAGEM 1', defaultRoute: 'VIANA' as RouteType, x: -9, z: -4, occupied: false, taxiId: null as string | null },
+    { id: 1, bayName: 'PARAGEM 2', defaultRoute: 'CACUACO' as RouteType, x: 0, z: -4, occupied: false, taxiId: null as string | null },
+    { id: 2, bayName: 'PARAGEM 3', defaultRoute: 'KILAMBA' as RouteType, x: 9, z: -4, occupied: false, taxiId: null as string | null },
   ];
 
   // Spawn Timers
@@ -870,7 +870,7 @@ export class GameEngine {
     const currentZone = this.playerStats.selectedMapId || 'PARAGEM_URBANA';
     this.sceneryObstacleManager.initLevelScenery(currentZone);
 
-    // 5. Demarcações 3D das 3 Baias de Candongueiros (Baia 1: Viana, Baia 2: Cacuaco, Baia 3: Kilamba)
+    // 5. Demarcações 3D das 3 PARAGEMs de Candongueiros (PARAGEM 1: Viana, PARAGEM 2: Cacuaco, PARAGEM 3: Kilamba)
     this.createTaxiBayDemarcations();
   }
 
@@ -1658,7 +1658,7 @@ export class GameEngine {
       return;
     }
 
-    // Spawn initial Taxis at the 3 Baias
+    // Spawn initial Taxis at the 3 PARAGEMs
     this.spawnTaxi('VIANA');
     this.spawnTaxi('CACUACO');
     this.spawnTaxi('KILAMBA');
@@ -1854,7 +1854,7 @@ export class GameEngine {
     return ['VIANA', 'CACUACO', 'KILAMBA'];
   }
 
-  /** Rota fixa de cada baia (coerente com o nº de baias do nível). */
+  /** Rota fixa de cada PARAGEM (coerente com o nº de PARAGEMs do nível). */
   private routeForSlot(slotIndex: number): RouteType {
     const allowed = this.getAllowedRoutes();
     return allowed[Math.min(slotIndex, allowed.length - 1)];
@@ -3591,7 +3591,7 @@ export class GameEngine {
       }
 
       // Regra nova: o táxi não espera para sempre (remainingWaitTime nunca era decrementado).
-      // Se não encher a tempo, parte; a baia liberta e chega outro (outra rota nas baias 2/3).
+      // Se não encher a tempo, parte; a PARAGEM liberta e chega outro (outra rota nas PARAGEMs 2/3).
       if (!this.isTutorial && (t.state === 'WAITING' || t.state === 'LOADING')) {
         t.remainingWaitTime -= delta;
         if (t.remainingWaitTime <= 10 && !t.leavingWarned) {
