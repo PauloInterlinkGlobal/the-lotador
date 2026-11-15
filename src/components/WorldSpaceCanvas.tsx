@@ -255,18 +255,13 @@ export const WorldSpaceCanvas: React.FC<WorldSpaceCanvasProps> = ({
                 </span>
                 <span className="text-[9px] font-space font-bold px-1.5 py-0.2 rounded-full bg-black/40 text-slate-200">
                   {isFull ? (
-                    <span className="text-red-400 font-black">LOTADO</span>
+                    <span className="text-red-300 font-black">0</span>
                   ) : (
                     <span>
                       <strong className="text-[#ffd700]">{freeSeats}</strong>/{taxi.capacity}
                     </span>
                   )}
                 </span>
-                {taxi.isTargetForFollowed && (
-                  <span className="text-[9px] font-anybody font-black bg-[#ffd700] text-[#161c28] px-1.5 py-0.2 rounded uppercase animate-bounce">
-                    LOTAR!
-                  </span>
-                )}
               </div>
               {/* Pointer Arrow pointing to van roof */}
               <div
@@ -286,68 +281,22 @@ export const WorldSpaceCanvas: React.FC<WorldSpaceCanvasProps> = ({
           ───────────────────────────────────────────────────────────── */}
       {projectedBadges.map((badge) => {
         const theme = ROUTE_THEMES[badge.destination] || ROUTE_THEMES.VIANA;
+        const stateClass = badge.isRefused
+          ? 'border-red-500 bg-red-950/90 text-red-100'
+          : badge.state === 'FOLLOWING'
+          ? 'border-emerald-400 bg-emerald-950/90 text-white'
+          : `${theme.border} bg-[#0d1522]/90 ${theme.text}`;
 
         return (
           <div
             key={badge.id}
-            className="absolute -translate-x-1/2 -translate-y-full transition-transform duration-75 will-change-transform"
-            style={{
-              left: `${badge.x}px`,
-              top: `${badge.y}px`,
-            }}
+            className="absolute -translate-x-1/2 -translate-y-full transition-transform duration-75 will-change-transform pointer-events-none"
+            style={{ left: `${badge.x}px`, top: `${badge.y}px` }}
           >
-            {badge.isRefused ? (
-              /* Refusal Error Badge ❌ */
-              <div className="flex flex-col items-center animate-bounce">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-950/95 border-2 border-red-500 text-white shadow-xl shadow-red-500/50 backdrop-blur-xs scale-105">
-                  <span className="flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[10px] font-black leading-none">
-                    ✕
-                  </span>
-                  <span className="font-anybody font-black text-[10px] tracking-wide text-red-200 uppercase">
-                    {badge.destination}
-                  </span>
-                  <span className="text-[9px] font-space font-bold bg-red-600/80 px-1 py-0.2 rounded text-white uppercase">
-                    SEM TÁXI!
-                  </span>
-                </div>
-                {/* Pointer Arrow */}
-                <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] border-t-red-500 -mt-[1px]" />
-              </div>
-            ) : badge.state === 'FOLLOWING' ? (
-              /* Following Player Badge ✓ */
-              <div className="flex flex-col items-center">
-                <div className="flex items-center gap-1.5 px-2.5 py-0.8 rounded-full bg-emerald-950/95 border-2 border-emerald-400 text-emerald-200 shadow-md shadow-emerald-500/30 backdrop-blur-xs">
-                  <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full bg-emerald-500 text-black text-[9px] font-black leading-none">
-                    ✓
-                  </span>
-                  <span className="font-anybody font-black text-[10px] tracking-wide uppercase text-white">
-                    {badge.destination}
-                  </span>
-                  <span className="text-[8px] font-space font-bold text-emerald-300 uppercase">
-                    A CAMINHO
-                  </span>
-                </div>
-                <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-emerald-400 -mt-[1px]" />
-              </div>
-            ) : (
-              /* Normal Waiting World Space Badge 📍 */
-              <div className="flex flex-col items-center group">
-                <div
-                  className={`flex items-center gap-1.5 px-2.5 py-0.8 rounded-full bg-[#0d1522]/95 border-2 ${theme.border} shadow-md ${theme.glow} backdrop-blur-xs transition-transform duration-100 hover:scale-110`}
-                >
-                  <span className={`w-2 h-2 rounded-full ${theme.dot} animate-pulse`} />
-                  <span
-                    className={`font-anybody font-black text-[10px] tracking-wider uppercase ${theme.text}`}
-                  >
-                    {badge.destination}
-                  </span>
-                </div>
-                {/* Subtle downward pointer to head */}
-                <div
-                  className={`w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] ${theme.border.replace('border-', 'border-t-')} -mt-[1px]`}
-                />
-              </div>
-            )}
+            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border shadow-md backdrop-blur-xs ${stateClass}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${badge.isRefused ? 'bg-red-400' : badge.state === 'FOLLOWING' ? 'bg-emerald-300' : theme.dot}`} />
+              <span className="font-anybody font-black text-[9px] tracking-wide uppercase">{badge.destination}</span>
+            </div>
           </div>
         );
       })}
