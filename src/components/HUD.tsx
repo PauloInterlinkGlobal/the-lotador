@@ -25,12 +25,10 @@ interface HUDProps {
   combo: number;
   stamina: number;
   maxStamina: number;
-  isRushHour: boolean;
   taxis: Taxi[];
   passengers: Passenger[];
   taxisLoadedCount?: number;
   activeDispute?: PassengerDispute | null;
-  floatingToasts?: { id: number; text: string; color: string }[];
   engine?: GameEngine | null;
   levelObjectives?: LevelObjective[];
   currentLevelNumber?: number;
@@ -56,12 +54,10 @@ const HUDComponent: React.FC<HUDProps> = ({
   combo,
   stamina,
   maxStamina,
-  isRushHour,
   taxis,
   passengers,
   taxisLoadedCount = 0,
   activeDispute,
-  floatingToasts,
   engine,
   levelObjectives,
   currentLevelNumber,
@@ -328,21 +324,6 @@ const HUDComponent: React.FC<HUDProps> = ({
 
           {/* 4. Active Paragem Taxis & 3 Fixed Baias (Viana, Cacuaco, Kilamba) */}
           <div className="flex flex-col gap-1 pointer-events-auto">
-            {followedPassenger && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/90 border border-emerald-400 text-white shadow-md animate-pulse">
-                <span className="text-[10px]">🚶</span>
-                <span className="text-[9px] font-anybody font-black uppercase text-emerald-300">
-                  {followedPassenger.name || 'PASSAGEIRO'}:
-                </span>
-                <span className="text-[10px] font-anybody font-black uppercase text-white bg-emerald-600/80 px-1.5 rounded">
-                  {followedPassenger.destination}
-                </span>
-                <span className="text-[9px] font-mono font-bold text-amber-300">
-                  +{followedPassenger.value} Kz
-                </span>
-              </div>
-            )}
-
             {/* 3 Baias de Candongueiros Fixas no Topo */}
             <div className="flex items-center gap-1 px-2 py-0.8 rounded-full bg-[#161c28]/90 backdrop-blur-xs border border-white/10 shadow-md">
               <span className="text-[9px] font-space font-black text-slate-300 mr-0.5">🚐 BAIAS:</span>
@@ -381,6 +362,18 @@ const HUDComponent: React.FC<HUDProps> = ({
                 );
               })}
             </div>
+            {paragemEvent && (
+              <div className="flex items-center gap-1.5 self-start px-2 py-1 rounded-lg bg-[#161c28]/90 border border-[#ffd700]/50 text-white text-[9px] shadow-sm">
+                <span className="text-[#ffd700]">{paragemEvent.icon}</span>
+                <span className="font-bold uppercase truncate max-w-[110px]">{paragemEvent.title}</span>
+                <span className="font-mono text-[#ffd700]">{Math.ceil(paragemEvent.remainingSeconds)}s</span>
+                {paragemEvent.type === 'TROCO_COMPLICADO' && onResolveParagemEvent && (
+                  <button type="button" onClick={onResolveParagemEvent} className="px-1.5 py-0.5 rounded bg-[#ffd700] text-[#161c28] font-black">
+                    RESOLVER
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -428,6 +421,7 @@ const HUDComponent: React.FC<HUDProps> = ({
                 {isTutorial ? 'TUTORIAL' : timeFormatted}
               </span>
             </div>
+            {combo > 1 && <span className="text-[9px] font-black text-[#ffd700]">×{combo}</span>}
           </div>
 
           {/* 6. Pause Button [Ⅱ] */}
@@ -444,138 +438,21 @@ const HUDComponent: React.FC<HUDProps> = ({
         </div>
       </header>
 
-      {/* ─────────────────────────────────────────────────────────────
-          CENTER SCREEN:
-          Reserved 85-90% for gameplay. NO permanent cards or bars!
-          Only brief transient banners or active dispute modal.
-          ───────────────────────────────────────────────────────────── */}
-      <div className="flex-1 relative flex flex-col items-center justify-start pt-[clamp(2px,0.8vh,6px)] pointer-events-none">
-        {/* Rush Hour Event Banner (only when active) */}
-        {isRushHour && (
-          <div className="bg-[#fe6b00]/90 backdrop-blur-xs border border-white/20 px-[clamp(8px,1.4vw,14px)] py-[clamp(3px,0.7vh,6px)] rounded-full mb-1 rush-pulse flex items-center gap-1.5 shadow-md">
-            <SpriteIcon name="effect_combo" className="w-[clamp(13px,1.5vw,16px)] h-[clamp(13px,1.5vw,16px)]" />
-            <span className="font-anybody font-black text-white text-[clamp(10px,1.1vw,12px)] uppercase tracking-wider">
-              🔥 HORA DE PONTA!
-            </span>
-          </div>
-        )}
+      {/* Central play area intentionally stays free of informational overlays. */}
+      <div className="flex-1 pointer-events-none" />
 
-        {/* Dynamic Paragem Random Event Banner (Blitz, Troco, Engarrafamento, Chuva) */}
-        {paragemEvent && (
-          <div className="bg-[#161c28]/95 backdrop-blur-xs border-2 border-[#ffd700] px-3.5 py-1 rounded-full mb-1 flex items-center gap-2 shadow-xl animate-bounce pointer-events-auto">
-            <span className="material-symbols-outlined text-sm text-[#ffd700]">
-              {paragemEvent.icon}
-            </span>
-            <span className="font-anybody font-black text-white text-[10px] md:text-[11px] uppercase tracking-wide">
-              {paragemEvent.title}
-            </span>
-            {paragemEvent.type === 'TROCO_COMPLICADO' && onResolveParagemEvent && (
-              <button
-                type="button"
-                onClick={onResolveParagemEvent}
-                className="bg-[#ffd700] hover:bg-[#ffe16d] active:scale-95 text-[#161c28] font-space font-black text-[9px] md:text-[10px] uppercase px-2 py-0.5 rounded-lg border border-[#161c28] cursor-pointer shadow-md"
-              >
-                DAR TROCO!
-              </button>
-            )}
-            <span className="text-[10px] font-mono text-[#ffd700] font-extrabold tabular-nums">
-              {Math.ceil(paragemEvent.remainingSeconds)}s
-            </span>
-          </div>
-        )}
-
-        {/* Combo Multiplier Badge (only when combo > 1) */}
-        {combo > 1 && (
-          <div className="combo-float">
-            <div className="bg-[#fe6b00]/90 border border-white/20 px-[clamp(8px,1.2vw,12px)] py-[clamp(2px,0.5vh,4px)] rounded-full flex items-center gap-1 shadow-md">
-              <span className="font-anybody font-black text-white text-[clamp(10px,1.1vw,12px)] uppercase">
-                COMBO x{combo}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Keyboard Controls Guidance Pill (Visible when playing on Desktop / Keyboard) */}
-        {inputMethod === 'KEYBOARD' && (
-          <div className="bg-[#161c28]/85 backdrop-blur-xs border border-white/15 px-3 py-1 rounded-full mt-1 flex items-center gap-1.5 shadow-md text-[9px] font-mono text-slate-300">
-            <span className="text-white font-bold">🎮 TECLADO:</span>
-            <span className="text-[#ffd700] font-bold">WASD / Setas</span>
-            <span>•</span>
-            <span className="text-[#ffd700] font-bold">[E] Chamar</span>
-            <span>•</span>
-            <span className="text-[#fe6b00] font-bold">[Espaço] Lotar</span>
-            <span>•</span>
-            <span className="text-cyan-400 font-bold">[Shift] Correr</span>
-          </div>
-        )}
-      </div>
-
-      {/* Floating Notifications Toasts (Brief, auto-fading) */}
-      <div
-        className="absolute left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center gap-1 z-40 w-full max-w-xs px-2"
-        style={{
-          top: 'max(clamp(46px, 10.5vh, 68px), calc(env(safe-area-inset-top, 0px) + 36px))',
-        }}
-      >
-        {floatingToasts?.map((toast) => (
-          <div
-            key={toast.id}
-            className="animate-bounce-in px-[clamp(8px,1.2vw,14px)] py-[clamp(3px,0.6vh,6px)] rounded-full text-[clamp(9px,1.0vw,11px)] font-black font-space tracking-wide text-white uppercase text-center shadow-md border border-white/20"
-            style={{ backgroundColor: toast.color || '#161c28' }}
-          >
-            {toast.text}
-          </div>
-        ))}
-      </div>
-
-      {/* Direct Passenger Dispute ("É MEU!") Interactive Overlay (only during dispute) */}
+      {/* Compact rival challenge kept outside the central play area. */}
       {activeDispute && !activeDispute.resolved && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[clamp(260px,85vw,360px)] max-h-[85vh] overflow-y-auto bg-white/95 backdrop-blur-md sticker-border hard-shadow p-[clamp(10px,1.5vw,14px)] z-50 pointer-events-auto rounded-2xl animate-scale-in flex flex-col items-center">
-          <div className="flex items-center justify-between w-full mb-1.5">
-            <div className="flex items-center gap-1.5">
-              <div className="w-7 h-7 rounded-xl bg-[#ba1a1a] flex items-center justify-center text-white border border-[#161c28] font-black font-anybody text-xs">
-                VS
-              </div>
-              <div>
-                <span className="text-xs font-black font-space uppercase text-[#161c28]">
-                  {activeDispute.npcName}
-                </span>
-                <p className="text-[9px] text-slate-500 font-bold leading-none">
-                  Destino: <strong className="text-[#006399]">{activeDispute.passengerDestination}</strong>
-                </p>
-              </div>
-            </div>
-            <div className="bg-[#ffd700] px-2 py-0.5 rounded-full border border-[#161c28] font-mono text-[10px] font-black">
-              {Math.max(0, activeDispute.timer).toFixed(1)}s
-            </div>
+        <div className="absolute top-[clamp(52px,9vh,76px)] right-2 md:right-5 w-[clamp(210px,25vw,270px)] bg-[#161c28]/95 border border-[#fe6b00]/70 rounded-xl px-2.5 py-2 z-40 pointer-events-auto shadow-lg">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-black uppercase text-white truncate">{activeDispute.npcName} disputa o passageiro</span>
+            <span className="text-[10px] font-mono font-bold text-[#ffd700] shrink-0">{Math.max(0, activeDispute.timer).toFixed(1)}s</span>
           </div>
-
-          <div className="w-full bg-[#fde8e8] border border-[#ba1a1a] rounded-xl px-2.5 py-1 mb-2 text-center">
-            <span className="text-[11px] font-black text-[#ba1a1a] font-space italic">
-              "{activeDispute.npcSpeech}"
-            </span>
+          <div className="h-1.5 bg-white/15 rounded-full overflow-hidden my-1.5">
+            <div className="h-full bg-gradient-to-r from-[#fe6b00] to-[#ffd700]" style={{ width: `${activeDispute.playerProgress}%` }} />
           </div>
-
-          <div className="w-full flex flex-col gap-0.5 mb-2.5">
-            <div className="flex justify-between text-[10px] font-black font-space">
-              <span className="text-[#ba1a1a]">{activeDispute.npcName}</span>
-              <span className="text-[#fe6b00]">{Math.round(activeDispute.playerProgress)}% TU</span>
-            </div>
-            <div className="w-full h-3 bg-slate-200 border border-[#161c28] rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-[#ba1a1a] via-[#fe6b00] to-[#ffd700] transition-all duration-75"
-                style={{ width: `${activeDispute.playerProgress}%` }}
-              />
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onCallAction}
-            className="w-full py-2 bg-[#ffd700] hover:bg-[#ffdf33] active:scale-95 border-2 border-[#161c28] rounded-xl flex items-center justify-center gap-1.5 text-[#161c28] font-anybody font-black uppercase text-xs animate-pulse cursor-pointer shadow-sm"
-          >
-            <SpriteIcon name="effect_megaphone" className="w-4 h-4" />
-            <span>PRESSIONA RÁPIDO [E] / CHAMA!</span>
+          <button type="button" onClick={onCallAction} className="w-full rounded-lg bg-[#ffd700] text-[#161c28] font-black uppercase text-[10px] py-1.5">
+            CHAMAR [E]
           </button>
         </div>
       )}
