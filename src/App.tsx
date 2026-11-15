@@ -20,7 +20,6 @@ import { MapSelectModal } from './components/MapSelectModal';
 import { LevelSelectionScreen } from './components/LevelSelectionScreen';
 import { LevelData, LevelObjective, SAMPLE_LEVELS_DATA, evaluateLevelResult } from './types/levelObjectives';
 import { ALL_LEVELS_DATA, getLevelConfig, toLevelData } from './data/levels';
-import { LevelStartBanner } from './components/LevelStartBanner';
 import { MissionsModal } from './components/MissionsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { HowToPlayGuide } from './components/HowToPlayGuide';
@@ -57,18 +56,15 @@ export default function App() {
   const [stamina, setStamina] = useState(100);
   const [maxStamina, setMaxStamina] = useState(100);
   const [timerSeconds, setTimerSeconds] = useState(180); // 3-minute match
-  const [isRushHour, setIsRushHour] = useState(false);
   const [taxis, setTaxis] = useState<Taxi[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [activeDispute, setActiveDispute] = useState<PassengerDispute | null>(null);
-  const [floatingToasts, setFloatingToasts] = useState<{ id: number; text: string; color: string }[]>([]);
 
   // Performance & Condition Tracking Refs for Current Match
   const disputesWonRef = useRef(0);
   const obstacleCollisionsRef = useRef(0);
   const sprintCountRef = useRef(0);
   const hasWonMatchRef = useRef(false);
-  const [showLevelBanner, setShowLevelBanner] = useState(false);
 
   // Active Level & In-Game Objectives
   const [activeLevel, setActiveLevel] = useState<LevelData>(
@@ -285,7 +281,6 @@ export default function App() {
     obstacleCollisionsRef.current = 0;
     sprintCountRef.current = 0;
     hasWonMatchRef.current = false;
-    setShowLevelBanner(!runTutorial);
 
     setMatchKz(0);
     setMatchXp(0);
@@ -300,10 +295,8 @@ export default function App() {
         completed: false,
       }))
     );
-    setIsRushHour(false);
     setParagemEvent(null);
     setActiveDispute(null);
-    setFloatingToasts([]);
     setIsPaused(false);
 
     // Show loading overlay and preload 3D models & sprite atlases
@@ -377,14 +370,8 @@ export default function App() {
                 )
               );
             },
-            onFloatingText: (text, color, pos) => {
-              const id = Date.now() + Math.random();
-              setFloatingToasts((prev) => [...prev.slice(-3), { id, text, color }]);
-              setTimeout(() => {
-                setFloatingToasts((prev) => prev.filter((t) => t.id !== id));
-              }, 2600);
-            },
-            onRushHourState: (isRush) => setIsRushHour(isRush),
+            onFloatingText: () => {},
+            onRushHourState: () => {},
             onStaminaChange: (cur, max) => {
               const roundedCur = Math.round(cur);
               const roundedMax = Math.round(max);
@@ -488,16 +475,7 @@ export default function App() {
               );
             },
             onParagemEvent: (evt) => setParagemEvent(evt),
-            onPassengerRefusal: (p) => {
-              setFloatingToasts((prev) => [
-                ...prev.slice(-3),
-                {
-                  id: Date.now() + Math.random(),
-                  text: `❌ ${p.destination}: Sem táxi compatível na paragem!`,
-                  color: '#ef4444',
-                },
-              ]);
-            },
+            onPassengerRefusal: () => {},
           },
           { isTutorial: runTutorial, levelConfig: selectedLevel }
         );
@@ -778,12 +756,10 @@ export default function App() {
             combo={matchCombo}
             stamina={stamina}
             maxStamina={maxStamina}
-            isRushHour={isRushHour}
             taxis={taxis}
             passengers={passengers}
             taxisLoadedCount={taxisLoaded}
             activeDispute={activeDispute}
-            floatingToasts={floatingToasts}
             engine={engineInstance}
             levelObjectives={!isTutorial ? matchObjectives : undefined}
             currentLevelNumber={!isTutorial ? activeLevel.level_number : undefined}
@@ -802,17 +778,6 @@ export default function App() {
               engineRef.current?.resolveChangeEvent();
             }}
           />
-
-          {/* Level Start Banner ("Nível N — Objetivos") */}
-          {!isTutorial && showLevelBanner && (
-            <LevelStartBanner
-              levelNumber={activeLevel.level_number}
-              route={activeLevel.chapter_name}
-              title={activeLevel.level_title}
-              objectives={matchObjectives}
-              onDismiss={() => setShowLevelBanner(false)}
-            />
-          )}
 
           {/* Interactive Tutorial Overlay */}
           {isTutorial && (
@@ -969,10 +934,10 @@ export default function App() {
       )}
 
       {/* PWA Offline / Update / Install Status Banner */}
-      <PWAStatusBanner />
+      {screen === 'MENU' && <PWAStatusBanner />}
 
       {/* Runtime Performance Diagnostics & Quality Selector (Active during game in DEV or when enabled in Settings) */}
-      {screen === 'GAME' && (import.meta.env.DEV || gameSettings.showFpsOverlay) && (
+      {screen === 'MENU' && gameSettings.showFpsOverlay && (
         <PerformanceOverlay
           engine={engineRef.current}
           onQualityChange={(q) => {
@@ -984,7 +949,7 @@ export default function App() {
       )}
 
       {/* Dev-Only Storage, Collision & Network Telemetry Diagnostics */}
-      {import.meta.env.DEV && (
+      {screen === 'MENU' && import.meta.env.DEV && (
         <DiagnosticOverlay
           fps={engineRef.current?.currentFps || 60}
           entityCount={{
