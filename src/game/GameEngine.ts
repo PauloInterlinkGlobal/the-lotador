@@ -21,6 +21,7 @@ import {
 import { LevelData } from '../types/levelObjectives';
 import { soundManager } from '../utils/audio';
 import { spriteAtlasManager } from '../utils/spriteAtlas';
+import { hasDirectionalFrames, RIVAL_CELL_WORLD_SIZE, RIVAL_SPRITE_CENTER_Y, RIVAL_WALK_FRAMES } from '../utils/atlasData';
 import { CAMPAIGN_ZONES } from '../utils/storage';
 import { BuildingManager } from './BuildingManager';
 import { classifyDevice, DynamicResolutionScaler } from '../utils/deviceProfile';
@@ -1588,10 +1589,17 @@ export class GameEngine {
       const { width: fw, height: fh } = spriteAtlasManager.getFrameSize(frameKey);
       const aspect = fh > 0 ? fw / fh : 0.4;
       sprite.scale.set(PASSENGER_WORLD_HEIGHT * aspect, PASSENGER_WORLD_HEIGHT, 1);
+    } else if (spriteFrameName && hasDirectionalFrames(spriteFrameName)) {
+      // Rivais com sprites reais (células 64x64)
+      sprite.scale.set(RIVAL_CELL_WORLD_SIZE, RIVAL_CELL_WORLD_SIZE, 1);
     } else {
       sprite.scale.set(1.4, 2.2, 1);
     }
-    sprite.position.y = isPlayer ? 1.35 : 1.1;
+    sprite.position.y = isPlayer
+      ? 1.35
+      : spriteFrameName && hasDirectionalFrames(spriteFrameName)
+      ? RIVAL_SPRITE_CENTER_Y
+      : 1.1;
     group.add(sprite);
 
     if (isPlayer) {
@@ -3331,12 +3339,27 @@ export class GameEngine {
       }
 
       const npcTypeKey = `npc_${npc.id}`;
+      const directional = hasDirectionalFrames(npcTypeKey);
       let frameKey = npcTypeKey;
       let yBob = 0;
       let shadowScale = 1.0;
       let shadowOpacity = 0.3;
 
-      if (isMoving) {
+      if (directional) {
+        // Sprites reais de 4 direções. A câmara olha para +Z: andar para +Z = de costas, para -Z = de frente.
+        let dir: 'back' | 'side' | 'front' = mesh.userData.facingDir || 'front';
+        if (isMoving) {
+          if (Math.abs(actualDz) > Math.abs(actualDx) * 1.15) dir = actualDz > 0 ? 'back' : 'front';
+          else if (Math.abs(actualDx) > 0.0005) dir = 'side';
+          mesh.userData.facingDir = dir;
+          npc.animDistance = (npc.animDistance || 0) + actualDist;
+          const frameIndex = Math.floor(npc.animDistance / 0.45) % RIVAL_WALK_FRAMES;
+          frameKey = `${npcTypeKey}_${dir}_walk_${frameIndex}`;
+        } else {
+          frameKey = `${npcTypeKey}_${dir}_idle`;
+        }
+        // O ciclo já traz o balanço do corpo: sem bob artificial
+      } else if (isMoving) {
         npc.animDistance = (npc.animDistance || 0) + actualDist;
         const strideLength = 0.42;
         const frameIndex = Math.floor(npc.animDistance / strideLength) % 4;
@@ -3365,8 +3388,15 @@ export class GameEngine {
           }
           mesh.userData.currentFrameKey = frameKey;
         }
-        spriteObj.scale.set(npc.facingLeft ? -1.4 : 1.4, 2.2, 1);
-        spriteObj.position.y = 1.1 + yBob;
+        if (directional) {
+          // O perfil original olha para a esquerda do ecrã: espelha quando o rival vai para a direita do ecrã (-X do mundo)
+          const sideFlip = mesh.userData.facingDir === 'side' && npc.facingLeft;
+          spriteObj.scale.set(sideFlip ? -RIVAL_CELL_WORLD_SIZE : RIVAL_CELL_WORLD_SIZE, RIVAL_CELL_WORLD_SIZE, 1);
+          spriteObj.position.y = RIVAL_SPRITE_CENTER_Y;
+        } else {
+          spriteObj.scale.set(npc.facingLeft ? -1.4 : 1.4, 2.2, 1);
+          spriteObj.position.y = 1.1 + yBob;
+        }
       }
 
       if (shadowMesh) {

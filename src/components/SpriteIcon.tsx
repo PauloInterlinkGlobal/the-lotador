@@ -8,6 +8,16 @@ import { ATLAS_FRAMES } from '../utils/atlasData';
 import spritesheetImg from '../assets/images/lotador_spritesheet_1786361082992.webp';
 import player1SpritesheetImg from '../assets/images/player1_spritesheet.png';
 import npcsPassengersImg from '../assets/images/npcs_passengers.png';
+import rivalGreenImg from '../assets/images/rival_green_walk.png';
+import rivalBlueImg from '../assets/images/rival_blue_sheet.png';
+import rivalRedImg from '../assets/images/rival_red_sheet.png';
+
+const REAL_ART_SOURCES: Record<string, string> = {
+  npcs: npcsPassengersImg,
+  rival_green: rivalGreenImg,
+  rival_blue: rivalBlueImg,
+  rival_red: rivalRedImg,
+};
 
 import { drawFallbackSprite } from '../utils/spriteAtlas';
 
@@ -62,15 +72,17 @@ export const SpriteIcon: React.FC<SpriteIconProps> = ({ name, className = '', st
     const ctx = canvas.getContext('2d', { willReadFrequently: false });
     if (!ctx) return;
 
-    // Passageiros com arte real (atlas 'npcs'): desenha o recorte da imagem, não o vetor antigo
-    if (frame.source === 'npcs') {
+    // Passageiros e rivais com arte real: desenha o recorte da imagem, não o vetor antigo
+    if (frame.source && REAL_ART_SOURCES[frame.source]) {
+      const srcUrl = REAL_ART_SOURCES[frame.source];
       const draw = () => {
-        const img = imageCache[npcsPassengersImg];
+        const img = imageCache[srcUrl];
         if (!img || !img.complete || !canvasRef.current) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = frame.source === 'npcs';
         ctx.drawImage(img, frame.x, frame.y, frame.width, frame.height, 0, 0, canvas.width, canvas.height);
       };
-      const img = getSharedImage(npcsPassengersImg, draw);
+      const img = getSharedImage(srcUrl, draw);
       if (img.complete) draw();
       return;
     }

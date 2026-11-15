@@ -8,7 +8,7 @@ export interface SpriteFrame {
   width: number;
   height: number;
   /** Which source image this frame is cropped from. Defaults to 'main' when omitted. */
-  source?: 'main' | 'player1' | 'scenery_obstacles' | 'npcs';
+  source?: 'main' | 'player1' | 'scenery_obstacles' | 'npcs' | 'rival_green' | 'rival_blue' | 'rival_red';
 }
 
 export const ATLAS_WIDTH = 1448;
@@ -421,3 +421,66 @@ function registerNpcFrames(name: string, box: [number, number, number, number]) 
 
 Object.entries(NPC_BOXES).forEach(([name, box]) => registerNpcFrames(name, box));
 Object.entries(NPC_ALIASES).forEach(([alias, target]) => registerNpcFrames(alias, NPC_BOXES[target]));
+
+/**
+ * RIVAIS COM SPRITES REAIS (grelha de células 64x64, 4 direções).
+ *  - Manuel "Veterano": walk.png (verde)       -> 8 frames de andar
+ *  - Kito "Relâmpago":  character-spritesheet.png (azul/preto) -> ciclo de corrida de 8 frames
+ *  - Zeca "Furacão":    mesma folha do Kito com as calças recoloridas (vermelho)
+ * Direções: back (costas), side (perfil; a arte original olha para a ESQUERDA), front (frente).
+ * Chaves: npc_<id>_<dir>_idle e npc_<id>_<dir>_walk_<0..7>
+ * (as chaves antigas npc_<id> e npc_<id>_walk_<0..3> continuam a existir e apontam para a frente).
+ */
+export const RIVAL_WALK_FRAMES = 8;
+type RivalDir = 'back' | 'side' | 'front';
+interface RivalSheet {
+  source: 'rival_green' | 'rival_blue' | 'rival_red';
+  idleRows: Record<RivalDir, number>;
+  idleCol: number;
+  walkRows: Record<RivalDir, number>;
+}
+const GREEN_SHEET: RivalSheet = {
+  source: 'rival_green',
+  idleRows: { back: 0, side: 1, front: 2 },
+  idleCol: 0,
+  walkRows: { back: 0, side: 1, front: 2 },
+};
+const BLUE_SHEET = (source: 'rival_blue' | 'rival_red'): RivalSheet => ({
+  source,
+  idleRows: { back: 0, side: 1, front: 2 }, // pose parada (linhas 0-2, coluna 0)
+  idleCol: 0,
+  walkRows: { back: 38, side: 39, front: 40 }, // ciclo de corrida de 8 frames
+});
+const RIVAL_SHEETS: Record<string, RivalSheet> = {
+  manuel: GREEN_SHEET,
+  kito: BLUE_SHEET('rival_blue'),
+  zeca: BLUE_SHEET('rival_red'),
+};
+const CELL = 64;
+const cell = (source: RivalSheet['source'], col: number, row: number): SpriteFrame => ({
+  x: col * CELL,
+  y: row * CELL,
+  width: CELL,
+  height: CELL,
+  source,
+});
+Object.entries(RIVAL_SHEETS).forEach(([id, sh]) => {
+  (['back', 'side', 'front'] as RivalDir[]).forEach((dir) => {
+    ATLAS_FRAMES[`npc_${id}_${dir}_idle`] = cell(sh.source, sh.idleCol, sh.idleRows[dir]);
+    for (let i = 0; i < RIVAL_WALK_FRAMES; i++) {
+      ATLAS_FRAMES[`npc_${id}_${dir}_walk_${i}`] = cell(sh.source, i, sh.walkRows[dir]);
+    }
+  });
+  ATLAS_FRAMES[`npc_${id}`] = ATLAS_FRAMES[`npc_${id}_front_idle`];
+  for (let i = 0; i < 4; i++) ATLAS_FRAMES[`npc_${id}_walk_${i}`] = ATLAS_FRAMES[`npc_${id}_front_walk_${i * 2}`];
+});
+
+/** true se o prefixo (ex.: 'npc_kito') tem sprites direcionais reais. */
+export function hasDirectionalFrames(prefix: string): boolean {
+  return !!ATLAS_FRAMES[`${prefix}_front_idle`];
+}
+
+/** Escala do mundo: o corpo ocupa ~47/64 da célula; 3.0 de célula => ~2.2 de altura do boneco. */
+export const RIVAL_CELL_WORLD_SIZE = 3.0;
+/** Altura do centro do sprite para os pés ficarem em y=0 (3px de margem inferior). */
+export const RIVAL_SPRITE_CENTER_Y = RIVAL_CELL_WORLD_SIZE / 2 - 0.14;

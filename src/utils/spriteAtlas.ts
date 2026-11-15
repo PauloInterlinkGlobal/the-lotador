@@ -21,12 +21,18 @@ import { ATLAS_FRAMES } from './atlasData';
 import player1SpritesheetImg from '../assets/images/player1_spritesheet.png';
 import sceneryObstaclesImg from '../assets/images/objetos-obstaculos.png';
 import npcsPassengersImg from '../assets/images/npcs_passengers.png';
+import rivalGreenImg from '../assets/images/rival_green_walk.png';
+import rivalBlueImg from '../assets/images/rival_blue_sheet.png';
+import rivalRedImg from '../assets/images/rival_red_sheet.png';
 
 // Registry of real (image-backed) atlas source images.
 const ATLAS_SOURCES: Record<string, string> = {
   player1: player1SpritesheetImg,
   scenery_obstacles: sceneryObstaclesImg,
   npcs: npcsPassengersImg,
+  rival_green: rivalGreenImg,
+  rival_blue: rivalBlueImg,
+  rival_red: rivalRedImg,
 };
 
 class SpriteAtlasManager {
